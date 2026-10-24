@@ -178,3 +178,27 @@ Module 1 notes:
   reset the six, record delivered and answered times, start the countdown
   on delivery, and an interim support reply. Next: review it with Marcus,
   Wen and Helen.
+
+Module 2 notes:
+- Interviews (4, Sofia, 2–5 Sep): callouts gone before the responder could
+  answer (3 of 4), handler not told a callout is live (3 of 4), quiet weeks
+  and overload (2 of 4), small status text (2 of 4). Interviews blame the time
+  to physically reach the phone ("coat on, one boot on"); tickets suggest late
+  delivery ("by the time i unlocked it, gone"). R6 will tell them apart.
+- All 147 tickets fall into ten groups. None of the 46 ping tickets is closed.
+  The interviewees' responders have just 1 ticket between them, and Vesper and
+  Meteor Mite (down 65%) have none, so ticket volume undercounts the worst hit.
+  Overload has zero tickets. Supply is the second-biggest group (26 tickets).
+- Root cause: `dispatch()` scores a miss as a refusal (−0.12 vs +0.08 for a
+  yes) and scores never recover, so the 4.2 cut to 60 seconds demoted
+  responders permanently. Not the ranking weights (acceptance weight went
+  down). Unproven until Wen replays the June–September pings.
+- Ranking algorithm: score = 0.60 × proximity (1 − minutes/45) + 0.25 ×
+  acceptance + 0.15 × capability match. Responders are offered one at a time
+  until someone takes the callout.
+- `missed-ping-requirements.md` is now v0.6: R1–R26, each with a type, an
+  S1–S4 severity and a P0–P3 priority. P0 is R2, R1, R26, R5, R19, R6 and R3,
+  plus R9 this week. The R1 replay is a release gate.
+- Open: does a ping go to the phone number on file or to a signed-in device
+  (decides R19)? Does routing use the out-of-date map? Interview the heaviest
+  ticket filers next: Linda Pruitt (Farlight) and Desmond Okafor (The Undertow).
