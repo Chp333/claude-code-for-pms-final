@@ -159,3 +159,22 @@ Module 1 notes:
 - Open: was the 4.2 routing change meant to cover responders who had been
   turning pings down (Marcus's 14 Aug question)? What happened to
   Availability Confidence? What do Ravi's official acceptance numbers show?
+- Confirmed from code and data: a missed ping costs the same as a turn-down
+  (−0.12; a taken ping is +0.08) and scores never recover (`history.py`).
+  After the cut to a 60-second wait, misses jumped from 2–6 a week to 38.
+  Six responders are pinged less (Farlight, The Undertow, Vesper and Meteor
+  Mite down 65–74%; Ashgrove and Halfmoon down 16–19%), and the other ten
+  went up.
+- Callouts where nobody went doubled after 4.2 (5.5% to 11.1%). A turn-down
+  passes a callout on in a median of 22 seconds; a miss takes the full wait.
+  The week of 3 Aug (pre-release) was the best in the data, so it doesn't
+  show a soft August.
+- Support tickets: 42% of the 107 since 4.2 are ping problems. Handlers say
+  availability is fine on their side. "Phone buzzed, by the time i unlocked
+  it, gone" suggests late push delivery: the countdown starts when the ping
+  is sent, not when it reaches the phone. Unconfirmed.
+- Wrote `missed-ping-requirements.md` (v0.2, R1–R9): recovery over time,
+  turn-down never costs more than a miss, alert the handler after 3 misses,
+  reset the six, record delivered and answered times, start the countdown
+  on delivery, and an interim support reply. Next: review it with Marcus,
+  Wen and Helen.
