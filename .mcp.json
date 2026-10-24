@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "rook-database": {
+      "type": "http",
+      "url": "https://mxbeajhhzutrfzqpsxnn.supabase.co/functions/v1/rook-database"
+    },
+    "rook-wiki": {
+      "type": "http",
+      "url": "https://mxbeajhhzutrfzqpsxnn.supabase.co/functions/v1/rook-wiki"
+    }
+  }
+}

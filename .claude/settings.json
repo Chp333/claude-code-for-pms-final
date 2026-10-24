@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": ["rook-wiki", "rook-database"],
+  "permissions": {
+    "allow": ["mcp__rook-wiki", "mcp__rook-database"]
+  }
+}

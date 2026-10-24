@@ -1,0 +1,8 @@
+# Codex project config (.codex/config.toml). Streamable HTTP MCP servers.
+# rook-wiki answers from a database copy of the wiki and never calls Notion, so calls finish well inside Codex's 60-second default tool_timeout_sec.
+
+[mcp_servers.rook-database]
+url = "https://mxbeajhhzutrfzqpsxnn.supabase.co/functions/v1/rook-database"
+
+[mcp_servers.rook-wiki]
+url = "https://mxbeajhhzutrfzqpsxnn.supabase.co/functions/v1/rook-wiki"
