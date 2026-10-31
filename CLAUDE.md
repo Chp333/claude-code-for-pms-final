@@ -220,3 +220,20 @@ Module 3 notes:
 - The Undertow (Okafor's only responder): ~12 pings/week before; 5 misses in the
   first three days of 4.2, then 4, 1, 1 pings a week, the last two both missed.
 - One number for Helen: missed pings ~4/week → 37 in the first five days.
+
+Module 4 notes:
+- Code (`00-rook/code/dispatch-routing/`): only a yes (+0.08) raises a score;
+  no/miss −0.12; no time recovery, no reset. Pings go to the signed-in device, so
+  R19 → P2. Scores sit in memory (`_scores = {}`); tags don't filter who's asked.
+  Callouts arrive already made. 4.2 weights apply to everyone, scores carried over.
+- `missed-ping-requirements.md` is v0.7: code-checked; R19 P2, R16 may rise, R5/R7
+  use share of pings, R20/R21 need Supply sign-off; open questions 14–18 added
+  (scores storage, untagged asks, callout source, pings writer, Marcus's 14 Aug).
+- Replay of the code's scoring: everyone was 0.80–1.00 on 11 Aug, so prior
+  turn-downs didn't decide who was hurt. The four hit 0; Ashgrove/Halfmoon
+  recovered. The four missed 53–64% of post-4.2 pings vs 10–18% for others.
+- Every turn-down takes ≤40 s, so the 60 s cut lost ~1 in 5 yeses. No ranking
+  model fixes that. The four fit a "steady" profile: yes in ~66 s, reliable at 90.
+- `04-x-ray-vision/ping_sim.py`: calibrated simulation. Rewarding in-time answers
+  plus recovery fixes fairness but not unfilled callouts at 60 s; adding "a late
+  yes within 30 s still counts" (design C) matches 90 s. Not yet in the doc.

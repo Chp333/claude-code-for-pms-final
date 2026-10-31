@@ -1,8 +1,9 @@
 # Requirements: Getting pings to responders, and keeping handlers in the loop
 
-Rook Dispatch · Draft v0.6 (adds severity and a ranked priority order) · Owner: Dispatch PM · September 2026
+Rook Dispatch · Draft v0.7 (checked against the routing code and callout volume) · Owner: Dispatch PM · September 2026
 Reviewers: Helen Achebe (Product), Marcus Oyelaran and Wen Li (Engineering),
-Nadia Hoffmann (Support), Ravi Menon (Data), Sofia Marino (Design)
+Nadia Hoffmann (Support), Ravi Menon (Data), Sofia Marino (Design),
+Rook Supply team (R20 and R21 change the availability record Supply reads)
 
 ## Problem
 
@@ -34,12 +35,34 @@ window, normal misses demoted responders permanently.
 | Scores never recover | `history.py` | Scores change only when a ping happens; there is no decay (2019 TODO). Offers stop at the first yes, so a low-ranked responder is rarely pinged and can't climb back. |
 | **Trigger** | `config.py` | `OFFER_TIMEOUT_SECONDS` cut from 90 to 60 in 4.2, so ordinary responders started missing. |
 
-**Contributing:** the countdown starts when the ping is sent, not delivered
-(`offer_to()`). **Not the cause:** the 4.2 ranking weights (acceptance weight
-went *down*, 0.40 to 0.25), availability, or seasonality.
+**Contributing:** the countdown starts as soon as the ping is sent, not when
+it's delivered (`offer_to()`). **Not the cause:** availability or seasonality.
+**Not proven either way:** the 4.2 ranking weights. Acceptance weight went
+*down* (0.40 to 0.25), which softens the penalty, but proximity went *up*
+(0.45 to 0.60). Capability tags don't take anyone off the list, so a close
+responder with none of the needed tags can now be asked before a qualified one
+further away (see R26 and open question 15). The R1 replay should check this.
 
 Confirmed from the code and consistent with the data. The replay in R1 and R2
 is the proof.
+
+**Checked against the code (`00-rook/code/dispatch-routing/`, v0.7):**
+- Confirmed: misses and turn-downs are scored the same (`offer.py`
+  `dispatch()`); −0.12 / +0.08 (`config.py`); no recovery (`history.py`);
+  offers stop at the first yes; one ping wait for everyone; the offer is
+  withdrawn from the phone when the wait runs out.
+- Pings go to "whatever device they're signed in on" (`push_to_device()`),
+  not to the number on the profile. R19 drops to S3/P2 (open question 10).
+- Scores are held in the service's memory (`_scores = {}` in `history.py`),
+  not in a database. Either they are stored somewhere outside this folder or
+  the service hasn't restarted since 12 Aug. This decides where R1 and R5 are
+  built (open question 14).
+- Nothing reports when a ping reaches the phone. R6 needs the phone app to
+  send a delivery signal, not just a new field.
+- `dispatch()` itself throws away the difference between missed and turned
+  down. Whatever writes the pings table keeps them apart, outside this folder
+  (open question 17).
+- Callouts arrive already made; this folder doesn't create them.
 
 ## Evidence
 
@@ -57,6 +80,18 @@ is the proof.
 - A turn-down passes the callout on in a median of **22 seconds**. A miss holds
   it for the full wait (62 seconds now, 92 before). There is no data on how
   long a *yes* takes.
+- **Fewer callouts are coming in.** About 140 a week before 4.2, 121–127
+  after, starting on release day itself (Wed 12 Aug: 12 callouts, against 27
+  the Wednesday before) and spread across 14 of 15 areas. Every callout still
+  gets at least one ping, so the drop is in callouts arriving, not in routing.
+  The cause is unknown (open question 16). Raw ping counts are about 12% lower
+  for everyone because of this, so per-responder thresholds use share of
+  pings, not raw counts (R5, R7).
+- **Tickets vs pings.** Both jump on 12 Aug. New ping complaints stopped by
+  the week of 31 Aug; what's left is repeat tickets from the handlers of
+  demoted responders (Farlight, The Undertow, Corporal Ashgrove, Halfmoon).
+  Ticket growth after that is mostly non-ping topics, and Support closed no
+  tickets in the week of 31 Aug.
 - Code: `history.record_declined()` treats missed and turned down the same
   (−0.12; a taken ping is +0.08). A 2019 TODO left score recovery unbuilt.
 
@@ -75,7 +110,8 @@ is the proof.
 - **None of the 46 ping tickets is closed.** Handlers refile every few days.
   Most other issues appear as near-identical tickets from two handlers.
 - **Phone numbers won't save** (2): "it says the format is wrong, but it is a
-  normal number." Pings may be going to old phones.
+  normal number." The code sends pings to the signed-in device, so this is
+  unlikely to silence a phone (R19).
 - **Availability is wrong** (4): hours use the handler's time zone when the
   responder travels, and there's no leave status ("looks the same as being
   busy"). Supply reads the same record. 4 more tickets report maintenance
@@ -157,26 +193,26 @@ few or no tickets: Vesper and Meteor Mite are down 65% with zero tickets.
 
 | Rank | Req | Sev | Pri | Why here |
 |---|---|---|---|---|
-| — | R9 Interim support reply | S3 | P0 | **Start this week; no engineering.** 46 ping tickets are waiting for an answer. |
-| 1 | R2 Score a miss as "didn't reach them" | S1 | P0 | Root cause: misses scored as refusals and penalised more than a yes. |
-| 2 | R1 Recovery over time | S1 | P0 | Root cause: without it, demoted responders never come back. |
+| — | R9 Interim support reply | S3 | P0 | **Start this week; no engineering.** 46 ping tickets are waiting for an answer, and Support closed none in the week of 31 Aug. |
+| 1 | R2 Score a miss as "didn't reach them" | S1 | P0 | Root cause: misses scored as refusals and penalised more than a yes. Confirmed in `offer.py`. |
+| 2 | R1 Recovery over time | S1 | P0 | Root cause: without it, demoted responders never come back. Where it's built depends on where scores are stored (open question 14). |
 | 3 | R26 No responder starved of pings | S1 | P0 | The pass/fail test that the trap is gone. |
 | 4 | R5 Reset the six | S1 | P0 | Immediate relief. Ships with R1 and R2, never before. |
-| 5 | R19 Phone numbers can be updated | S1* | P0 | Cheap, and could directly silence a phone. *Drops to S3/P2 if Wen confirms pings go to a signed-in device, not the number. |
-| 6 | R6 Record delivered and answered times | Enabler | P0 | **Ship first in the release** so data builds up; R8 and R10 depend on it. |
-| 7 | R3 Keep missed and turned down separate | Guardrail | P0 | No extra work; comes with R2. |
-| 8 | R10 Set the ping wait from data | S1 | P1 | The trigger. Interviews say 60 seconds is too short. Waits only for R6 data. |
-| 9 | R8 Countdown from delivery | S1* | P1 | *Only if R6 shows a real delivery delay; otherwise drop it. |
-| 10 | R12 Live-callout alert for the handler | S2 | P1 | 3 of 4 interviews; zero tickets ask, so it's easy to underrate. **Ship with R22.** |
-| 11 | R22 Stay signed in while watching | S2 | P1 | A logged-out handler can't see R12's alert. Mostly configuration. |
-| 12 | R20 Availability in the responder's time zone | S2 | P1 | Wrong-hour pings cause misses and break Supply's maintenance scheduling. |
-| 13 | R21 Leave status | S2 | P1 | Same as R20; leave days shouldn't count against the score. |
-| 14 | R7 Weekly health metrics | Enabler | P1 | Catches the next regression in a week, not three. Monitors R26. |
-| 15 | R11 Overload watch | S2 | P1 | Ten responders are carrying extra work, and no channel reports it. |
-| 16 | R13 Different alert sounds | S2 | P1 | Small effort; helps a handler react to the right responder. |
-| 17 | R4 Alert after 3 misses | S2 | P1 | Less urgent once R1 and R2 stop misses trapping people. |
-| 18 | R24 Support closes the loop | S3 | P1 | How 4.2 would have been caught in week one. |
-| 19 | R16 Reliable saved filters | S3 | P2 | 8 defects; handlers watch the wrong list, but no callouts lost. |
+| 5 | R6 Record delivered and answered times | Enabler | P0 | **Ship first in the release** so data builds up; R8 and R10 depend on it. Bigger than it looks: nothing reports delivery today, so the phone app has to. |
+| 6 | R3 Keep missed and turned down separate | Guardrail | P0 | No extra work; comes with R2. |
+| 7 | R10 Set the ping wait from data | S1 | P1 | The trigger. Interviews say 60 seconds is too short. Waits only for R6 data. |
+| 8 | R8 Countdown from delivery | S1* | P1 | *Only if R6 shows a real delivery delay; otherwise drop it. |
+| 9 | R12 Live-callout alert for the handler | S2 | P1 | 3 of 4 interviews; zero tickets ask, so it's easy to underrate. **Ship with R22.** |
+| 10 | R22 Stay signed in while watching | S2 | P1 | A logged-out handler can't see R12's alert. Mostly configuration. |
+| 11 | R20 Availability in the responder's time zone | S2 | P1 | Wrong-hour pings cause misses and break Supply's maintenance scheduling. **Needs Supply sign-off** (changes the availability record). |
+| 12 | R21 Leave status | S2 | P1 | Same as R20, including Supply sign-off. |
+| 13 | R7 Weekly health metrics | Enabler | P1 | Catches the next regression in a week, not three. Monitors R26 and callout volume. |
+| 14 | R11 Overload watch | S2 | P1 | Ten responders are carrying extra work, and no channel reports it. |
+| 15 | R13 Different alert sounds | S2 | P1 | Small effort; helps a handler react to the right responder. |
+| 16 | R4 Alert after 3 misses | S2 | P1 | Less urgent once R1 and R2 stop misses trapping people. |
+| 17 | R24 Support closes the loop | S3 | P1 | How 4.2 would have been caught in week one. |
+| 18 | R16 Reliable saved filters | S3* | P2* | 14 filter tickets since 4.2; handlers watch the wrong list. *Rises to S1/P1 if Marcus confirms handlers raise callouts from the console, since callouts fell from release day (open question 16). |
+| 19 | R19 Phone numbers can be updated | S3 | P2 | Down from P0: pings go to the signed-in device, not the number (`offer.py`). Still a real bug for two handlers. |
 | 20 | R25 Screen reader | S3 (S2 for the affected handler) | P2 | Blocks one handler today; compliance risk; likely cheap. |
 | 21 | R15 Status readable at a glance | S3 | P2 | 2 of 4 interviews. Cheap; do it alongside R12 (same screen). |
 | 22 | R23 Shift cover without shared logins | S3 | P2 | Biggest build here; needs a Security Policy 4.1 review first. |
@@ -184,9 +220,15 @@ few or no tickets: Vesper and Meteor Mite are down 65% with zero tickets.
 | 24 | R14 "Pings this week vs usual" on cards | S4 | P3 | Mostly unnecessary once R1 and R26 close the gaps it explains. |
 | 25 | R18 Tag legend easier to find | S4 | P3 | A once-a-fortnight annoyance. |
 
-**Changes from v0.5:** R15, R16, R23 and R25 moved from P1 to P2. R14, R17
-and R18 moved from P2 to the new P3. R6 now ships first in its release. R12
-and R22 ship together. R9 starts this week rather than waiting for a release.
+**Changes from v0.6:** checked every requirement against the routing code.
+R19 moved from P0 to P2 (pings go to the signed-in device). R16 may rise to
+P1 depending on where callouts come from. R6 is flagged as needing a delivery
+signal from the phone app. R20 and R21 need Supply sign-off. R21 drops its
+score clause (the score only changes when someone is pinged). R5 and R7 use
+share of pings instead of raw counts, because callout volume fell about 12%.
+R7 adds callouts per week. R26 notes that tags don't filter the list. The
+4.2 ranking weights move from "not the cause" to "not proven". Open questions
+10 and 14–18 updated or added.
 
 ## Requirements
 
@@ -194,14 +236,14 @@ and R22 ship together. R9 starts this week rather than waiting for a release.
 
 | # | Type | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|---|
-| R1 | Fix: pre-4.2 | P0 | **Recovery over time.** A responder's recent-acceptance score eases back toward neutral (0.5) as time passes, whatever their score is. | **Time-based:** the score recovers with elapsed time, including for a responder who gets no pings at all. **Outcome:** a responder demoted by 3 misses in a row is back in normal rotation within a configurable period (proposed: 3 days). Scores above neutral also ease back. The rate is a value in `config.py`. **Release gate:** replaying the 29 Jun – 6 Sep pings through the new scoring shows none of the six affected responders (R5) below their pre-4.2 weekly ping rate, and fewer callouts where nobody went than the 11.1% observed. |
+| R1 | Fix: pre-4.2 | P0 | **Recovery over time.** A responder's recent-acceptance score eases back toward neutral (0.5) as time passes, whatever their score is. | **Time-based:** the score recovers with elapsed time, including for a responder who gets no pings at all. **Outcome:** a responder demoted by 3 misses in a row is back in normal rotation within a configurable period (proposed: 3 days). Scores above neutral also ease back. The rate is a value in `config.py`. **Release gate:** replaying the 29 Jun – 6 Sep pings through the new scoring shows none of the six affected responders (R5) below their pre-4.2 weekly ping rate, and fewer callouts where nobody went than the 11.1% observed. **Storage:** scores must survive a restart; today they sit in the service's memory (`history.py`), so confirm where they are really kept before building (open question 14). |
 | R2 | Fix: pre-4.2 | P0 | **Score a miss as "didn't reach them", not as a refusal.** Missed and turned down are scored separately. A turn-down never costs more than a miss, and one taken ping fully offsets one miss. | `dispatch()` scores missed and turned-down pings through separate paths; `record_declined()` is no longer called for a miss. Build checks fail if the turn-down penalty is larger than the miss penalty, **or** the miss penalty is larger than the reward for a taken ping. Proposed values: turned down −0.04, missed −0.06, taken +0.08 (Wen to tune using the R1 replay). **Release gate:** the R1 replay passes with these values. |
 | R3 | Guardrail (no change) | P0 | **Keep missed and turned down as separate records.** Ranking may weigh them however it likes, but storage and reporting keep the two apart. | Every ping is stored as taken, turned down or missed, as today. No reporting rolls them together. |
-| R5 | Fix: 4.2 | P0 | **One-off reset for responders already demoted.** At release, reset the score to neutral for any responder whose weekly pings fell by more than 10% after 4.2. | The reset list is reviewed with Marcus before it runs. On current data it is exactly six: Farlight, The Undertow, Vesper, Meteor Mite, Corporal Ashgrove, Halfmoon. The reset is logged. **Runs in the same release as R1 and R2, or after them, never before:** without them, reset responders fall back into the trap. |
-| R6 | New | P0 | **Record when each ping reached the phone and when it was answered.** Each ping stores a delivered time (from the phone) and an answered time (taken or turned down). | 100% of pings from release onward have a delivered time where the phone reports one, and every answered ping has an answered time. Ravi reports the sent-to-delivered gap and time-to-yes weekly. |
+| R5 | Fix: 4.2 | P0 | **One-off reset for responders already demoted.** At release, reset the score to neutral for any responder whose share of all pings fell by more than 10% after 4.2. | Measured as share of pings, not raw count, because callouts fell about 12% for everyone after 4.2. The reset list is reviewed with Marcus before it runs. On current data it is expected to be these six (re-check Corporal Ashgrove, −22% raw, and Halfmoon, −19% raw, on share): Farlight, The Undertow, Vesper, Meteor Mite, Corporal Ashgrove, Halfmoon. The reset is logged. **Runs in the same release as R1 and R2, or after them, never before:** without them, reset responders fall back into the trap. |
+| R6 | New | P0 | **Record when each ping reached the phone and when it was answered.** Each ping stores a delivered time (from the phone) and an answered time (taken or turned down). | 100% of pings from release onward have a delivered time where the phone reports one, and every answered ping has an answered time. Ravi reports the sent-to-delivered gap and time-to-yes weekly. **Scope:** nothing reports delivery today, so the phone app must send a delivery signal back to Dispatch (open question 6). |
 | R8 | Fix: pre-4.2 | P1 | **Start the countdown when the ping reaches the phone.** The ping wait is measured from delivery, not from sending. There is a cap so a ping that never arrives still moves on. | Every responder gets the full ping wait on screen. A ping with no delivery confirmation moves on after the ping wait plus a configurable cap (proposed: 15 seconds). *Ship after R6 data confirms the delay is real; drop it if not.* |
 | R10 | Fix: 4.2 | P1 | **Set the ping wait from data.** Two weeks after R6 ships, review the ping wait against real answer times and change it if needed. | The wait is set so at least 95% of yeses land inside it (proposed target; Helen to confirm). The decision and the data behind it are recorded. The wait stays one value for everyone. |
-| R26 | Fix: pre-4.2 | P0 | **No responder is starved of pings.** The pass/fail test that the trap is gone. | No available responder with the required tags goes more than a configurable period (proposed: 3 days) without a ping while callouts needing those tags happen in their area. It is checked in the R1 replay before release and monitored weekly after (R7). If it's breached, the responder is flagged to Support and the handler, not silently skipped. |
+| R26 | Fix: pre-4.2 | P0 | **No responder is starved of pings.** The pass/fail test that the trap is gone. | No available responder with the required tags goes more than a configurable period (proposed: 3 days) without a ping while callouts needing those tags happen in their area. It is checked in the R1 replay before release and monitored weekly after (R7). If it's breached, the responder is flagged to Support and the handler, not silently skipped. **Note:** routing doesn't use tags to decide who is asked, only as 15% of the score, so this check has to work out who had the tags from the responder records, not from routing (open question 15). |
 | R11 | New | P1 | **Watch for overload.** Track whether work is piling onto some responders as others are demoted. | Ravi's weekly report shows the spread of pings across responders and flags anyone more than 30% above their 6-week average. Today that would flag several, including The Gale (+48%). Any routing cap is a separate decision. |
 
 ### B. Handler visibility
@@ -219,8 +261,8 @@ and R22 ship together. R9 starts this week rather than waiting for a release.
 | # | Type | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|---|
 | R15 | Fix: pre-4.2 | P2 | **Status readable at a glance.** Make the status badge (engaged / available) larger and higher-contrast. | In testing with handlers, status reads correctly from a standing distance (about 1.5 m) on a laptop. Badge text meets WCAG AA contrast. |
-| R16 | Fix: 4.2 | P2 | **Saved filters are reliable.** Fix the 4.2 filter defects, and warn the handler if their saved filter has been reset. | Saved filters survive console updates. They are per handler, not per computer. If a reset does happen, the console shows a visible notice until it's dismissed. Filter-defect tickets fall to zero. |
-| R7 | New | P1 | **New health metrics.** Add to Ravi's weekly report: % of callouts where nobody went, pings per responder per week, miss rate per responder, sent-to-delivered gap and time-to-yes. | Flag any responder whose weekly pings are more than 10% below their 6-week average with no change in availability. (A 50% week-on-week rule would have missed Ashgrove and Halfmoon.) |
+| R16 | Fix: 4.2 | P2 (may rise to P1) | **Saved filters are reliable.** Fix the 4.2 filter defects, and warn the handler if their saved filter has been reset. | Saved filters survive console updates. They are per handler, not per computer. If a reset does happen, the console shows a visible notice until it's dismissed. Filter-defect tickets fall to zero. *Filter persistence shipped in 4.2, and callouts fell from release day. If handlers raise callouts from the console, this may be losing callouts, which would make it S1 (open question 16).* |
+| R7 | New | P1 | **New health metrics.** Add to Ravi's weekly report: callouts per week, % of callouts where nobody went, each responder's share of pings, miss rate per responder, sent-to-delivered gap and time-to-yes. | Flag any responder whose share of pings is more than 10% below their 6-week average with no change in availability. Use share, not raw count, so a drop in callouts doesn't flag everyone. Flag callouts per week if it falls more than 10% below its 6-week average. (A 50% week-on-week rule would have missed Ashgrove and Halfmoon.) |
 | R17 | New | P3 | **Dark mode.** | A built-in dark theme the handler can turn on. All text and status colours meet WCAG AA in both themes. |
 | R18 | Fix: pre-4.2 | P3 | **Capability tag legend easy to find.** | The legend opens from wherever tags appear, in one click. |
 
@@ -231,9 +273,9 @@ here to keep the R-numbers stable from v0.2.*
 
 | # | Type | Pri | Requirement | Acceptance criteria |
 |---|---|---|---|---|
-| R19 | Fix: pre-4.2 | P0 | **Phone numbers can be updated.** The responder profile accepts any valid phone number, and pings follow the change. | Valid numbers in local and international formats save without error. After a change, the next ping reaches the new number or device. Responders whose number change was rejected are found and fixed (at least Stormwrack and The Drift). |
-| R20 | Fix: pre-4.2 | P1 | **Availability uses the responder's time zone.** A handler can set where the responder is, and availability windows follow it. | Availability is stored and checked in the responder's time zone. The console shows both the responder's local time and the handler's. A responder working in another city is pinged only inside their own hours. |
-| R21 | New | P1 | **Leave status.** A handler can mark a responder as on leave for a date range, separately from busy or unavailable. | Responders on leave aren't pinged. Leave shows differently from busy in the console. Supply's maintenance scheduling can read it. Days on leave don't lower the acceptance score and don't trigger the R7 "fewer pings" flag. |
+| R19 | Fix: pre-4.2 | P2 | **Phone numbers can be updated.** The responder profile accepts any valid phone number. | Valid numbers in local and international formats save without error. Responders whose number change was rejected are found and fixed (at least Stormwrack and The Drift). *Pings go to the signed-in device, not the number (`push_to_device()`), so this doesn't stop a phone buzzing. Wen to confirm the number plays no part.* |
+| R20 | Fix: pre-4.2 | P1 | **Availability uses the responder's time zone.** A handler can set where the responder is, and availability windows follow it. | Availability is stored and checked in the responder's time zone. The console shows both the responder's local time and the handler's. A responder working in another city is pinged only inside their own hours. Supply signs off before release: this changes the availability record Supply reads (`availability.py` says its shape is a contract). |
+| R21 | New | P1 | **Leave status.** A handler can mark a responder as on leave for a date range, separately from busy or unavailable. | Responders on leave aren't pinged. Leave shows differently from busy in the console. Supply's maintenance scheduling can read it, and Supply signs off on the change to the availability record. Days on leave don't trigger the R7 "fewer pings" flag or R26. (They already can't lower the score, which only changes when someone is pinged.) |
 | R22 | Fix: pre-4.2 | P1 | **Handlers stay signed in while watching.** The console doesn't sign out a handler who is watching a live view, and a locked-out handler gets back in fast. | A visible coverage view stays signed in for a full shift (proposed: up to 12 hours; Security to approve). Password reset emails arrive within 5 minutes for 95% of requests. |
 | R23 | New | P2 | **Shift cover without shared logins.** A responder can have more than one handler, each with their own sign-in, plus a handover note between shifts. | A covering handler has their own sign-in for the same responder. Filters (R16) and alerts (R12, R4) are per sign-in. The outgoing handler can leave a note that the next one sees on sign-in. Shared logins can be retired. Security Policy 4.1 review done. |
 | R24 | New | P1 | **Support closes the loop.** Duplicate tickets are linked to one known issue, handlers are told when it's fixed, and Product gets a weekly theme count. | Every ticket is tagged with a theme. Tickets about the same issue link to one known issue. When it's fixed, every linked handler gets a reply. Weekly theme counts go to the Dispatch PM, and a theme that doubles week on week is flagged. |
@@ -275,9 +317,10 @@ From Halloran's interview and 26 Supply tickets (10 before 4.2, 16 after).
 
 | Metric | Now (post-4.2) | Target, 4 weeks after release |
 |---|---|---|
-| Callouts where nobody went | 11.1% | ≤ 5.5% |
+| Callouts where nobody went | 11.1% (5.5% in the week of 31 Aug, on lower volume) | ≤ 5.5% for 4 weeks in a row |
+| Callouts per week | 121–127 (about 140 before 4.2) | Explained, or back to the pre-4.2 level |
 | Responders getting < 25% of their pre-4.2 weekly pings | 4 | 0 |
-| Responders whose weekly pings fell > 10% with no change in availability | 6 | 0 |
+| Responders whose share of pings fell > 10% with no change in availability | 6 (raw count; re-check on share) | 0 |
 | Responders more than 30% above their 6-week average | Several (e.g. The Gale +48%) | Agreed once R11 baseline is set |
 | Time-to-yes (95th percentile) vs ping wait | Not measured | 95% of yeses inside the wait |
 | Gap between ping sent and delivered (median / slowest 10%) | Not measured | Baseline set; target agreed once known |
@@ -317,9 +360,10 @@ responders were still being skipped.
 9. **R12 and the Handler Phone App.** Is the live alert in the console enough,
    or does it need the phone app to work for handlers away from the desk, like
    Dot? *Owner: Sofia.*
-10. **How pings find a phone.** Are pings sent to the number on the profile,
-    or to a signed-in device? If it's the number, R19 may explain some
-    "phone never goes off" cases. *Owner: Wen.*
+10. **How pings find a phone.** *Mostly answered (v0.7):* the code sends
+    pings to "whatever device they're signed in on", so R19 dropped to P2.
+    Open: does the number on the profile play any part in finding that
+    device? *Owner: Wen.*
 11. **Out-of-date map.** The incident map still shows the old road layout by
     the ferry terminal (2 tickets). Does routing's travel-time estimate use
     the same map data? If so, proximity scores there are wrong.
@@ -329,3 +373,23 @@ responders were still being skipped.
     template? It changes how big those issues really are. *Owner: Nadia.*
 13. **Idle sign-out.** Is a 12-hour signed-in session acceptable under
     Security Policy 4.1 (R22)? *Owner: PM.*
+14. **Where scores are stored.** `history.py` keeps scores in the service's
+    memory. Are they saved anywhere else, and does a restart reset everyone
+    to neutral? This decides how R1 and R5 are built. *Owner: Wen.*
+15. **Asking people without the tags.** Routing asks everyone available;
+    tags are only 15% of the score. With proximity at 60% since 4.2, a close
+    responder with none of the needed tags can be asked before a qualified
+    one further away. Is that intended, and did it change callout outcomes
+    after 4.2? Check in the R1 replay. *Owner: Wen.*
+16. **Where callouts come from.** Callouts arrive in routing already made.
+    Who or what creates them, and can console filters (R16) affect whether
+    one is raised? Callouts fell about 12% from release day. *Owner: Marcus.*
+17. **What writes the pings table.** `dispatch()` treats missed and turned
+    down the same, but the pings table keeps them apart. Which part of
+    Dispatch records outcomes? R3 depends on it. *Owner: Wen.*
+18. **Who the 4.2 weighting was meant for.** Marcus asked on 14 Aug whether
+    the routing change was meant to apply to responders who'd already been
+    turning jobs down, or whether it "just fell out that way". The code
+    applies the new weights to everyone, with scores carried over from before
+    4.2 and no reset. It doesn't show what was intended. No answer is
+    recorded. *Owner: Wen.*
