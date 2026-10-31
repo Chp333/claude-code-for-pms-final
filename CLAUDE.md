@@ -202,3 +202,21 @@ Module 2 notes:
 - Open: does a ping go to the phone number on file or to a signed-in device
   (decides R19)? Does routing use the out-of-date map? Interview the heaviest
   ticket filers next: Linda Pruitt (Farlight) and Desmond Okafor (The Undertow).
+
+Module 3 notes:
+- Pings table, weekly: acceptance ~77% before 4.2 → 46.8% (12–16 Aug), 65.8%,
+  66.7%, 72.7%. Misses 2–6/week → 37 in the first five days, then 28, 24, 21.
+  Turn-downs barely moved. Pings per callout rose 1.22 → 1.30.
+- Callouts coming in fell ~12% from release day itself (Wed 12 Aug: 12, vs 27
+  the Wed before), across 14 of 15 areas; every callout still gets pinged.
+  v0.6 doesn't cover this. Suspect: 4.2 filter persistence (R16, now P2), if
+  handlers raise callouts from the console. Ask Marcus where callouts come from.
+- Fewer callouts skews raw-count thresholds: R5's −10% (Ashgrove −22%, Halfmoon
+  −19% are close to the ~12% volume drop) and R7's flag. Use share of pings.
+- Tickets vs pings: both jump on 12 Aug. New ping complaints stopped by 31 Aug;
+  the rest are repeats from handlers of stuck responders (Okafor, Pruitt, Demir,
+  Fischer), all still open. Ticket growth after that is mostly non-ping topics,
+  and Support closed none in the week of 31 Aug.
+- The Undertow (Okafor's only responder): ~12 pings/week before; 5 misses in the
+  first three days of 4.2, then 4, 1, 1 pings a week, the last two both missed.
+- One number for Helen: missed pings ~4/week → 37 in the first five days.
