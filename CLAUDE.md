@@ -270,3 +270,10 @@ Module 6 notes:
   phone never confirms moves on at 15 s and never counts. No "under 45 s left" rule.
 - Only a review-checklist *output* exists (`06-sidekicks/scheduled-run-output.txt`: owner,
   success measure, bounded scope, problem before fix); no checklist definition or briefs folder.
+- Capstone: `final-report.html` (14 slides). What 4.2 did, one finding + the exact prompt
+  per module (M1 #1, M2 #7, M3 #10, M4 #13, M5 #2, M6 #3), design rules, live prototype
+  embed, before/now/target, and how qa-testing prevents a repeat. The live embed only works
+  when opened from the project folder. It uses the Module 2 notes' "3 of 4 handlers not told"
+  figure, though a later read found 2 of 4.
+- Still open: run the 96 approved QA tests; Helen's decisions (minimum score, window, boost,
+  headline numbers); Wen's three questions; Security Policy 4.1.
