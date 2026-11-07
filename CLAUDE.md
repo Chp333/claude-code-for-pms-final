@@ -237,3 +237,24 @@ Module 4 notes:
 - `04-x-ray-vision/ping_sim.py`: calibrated simulation. Rewarding in-time answers
   plus recovery fixes fairness but not unfilled callouts at 60 s; adding "a late
   yes within 30 s still counts" (design C) matches 90 s. Not yet in the doc.
+
+Module 5 notes:
+- Fresh re-check: 4.2 made nearest-first worse. Local share of pings fell in Old Town
+  83%→16%, Uptown 76%→11%, Harborside 81%→20%. 42 callouts before 4.2 and 40 after
+  ended after one ping with nobody else asked. Callouts coming in fell ~15% from
+  release day in 14 of 15 areas (only Southport flat); unexplained.
+- Student's rules: keep 4.2's goals (nearest first, 60 s hand-off). No fix may keep a
+  ping open past 60 s, so no 90 s rollback and no countdown-from-delivery. Check every
+  idea against those goals and walk through what-if scenarios before suggesting it.
+- Agreed scoring: "no" costs less than a miss (0.5 vs 1.0); release after accepting
+  is worst (1.5, accept credit removed, handler can excuse). Score = rate over a
+  time window (length is Helen's call; no 30-day requirement exists); floor 0.6
+  (~3 min of travel); accepts ×3 while below the middle (~8 accepts back); out-of-area
+  "no" not counted; 3 misses in a row → "still available?" pause, not a penalty.
+- Deliverables: `dispatch-recovery-requirements.md` + `.docx` (DR-01–DR-32, JTBD,
+  what-if W1–W38); `05-super-speed/Quiet-Responders-Director-Brief.docx` for Helen's
+  request (`director-request.txt`); clickable walkthrough at
+  `05-super-speed/prototype/index.html`. Old `brief.md` used bad assumptions.
+- Student wants plain English for audiences (no "recompute", "floor", "interim").
+  Open: Security Policy 4.1 isn't in the wiki (needed for lock-screen accept); Wen to
+  confirm delivery receipts, why callouts stop after one ping, where scores are stored.

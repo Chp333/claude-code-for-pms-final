@@ -1,0 +1,1718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispatch Recovery Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5fa; --panel:#ffffff; --panel2:#f8fafc; --ink:#0f172a; --muted:#64748b; --line:#e3e8f0;
+  --accent:#4f46e5; --accent-soft:#eef0ff; --teal:#0ea5a4; --good:#10b981; --good-soft:#e7f8f1;
+  --warn:#f59e0b; --warn-soft:#fff6e5; --bad:#ef4444; --bad-soft:#fdecec; --shadow:0 10px 30px rgba(15,23,42,.08);
+  --r:16px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b1020; --panel:#121a2e; --panel2:#0f1628; --ink:#e6eaf5; --muted:#93a0b8; --line:#243049;
+    --accent:#818cf8; --accent-soft:#1e2350; --good-soft:#0f2a22; --warn-soft:#2d2410; --bad-soft:#2e1416; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b1020; --panel:#121a2e; --panel2:#0f1628; --ink:#e6eaf5; --muted:#93a0b8; --line:#243049;
+  --accent:#818cf8; --accent-soft:#1e2350; --good-soft:#0f2a22; --warn-soft:#2d2410; --bad-soft:#2e1416; --shadow:0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer}
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;padding:12px 20px;background:color-mix(in srgb,var(--panel) 85%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.01em}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--teal));display:grid;place-items:center;color:#fff;font-weight:800}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg button{border:0;background:transparent;color:var(--muted);padding:6px 12px;border-radius:9px;font-weight:600}
+.seg button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-weight:600;font-size:12px;border:1px solid var(--line);background:var(--panel)}
+.pill.old{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.pill.new{background:var(--good-soft);color:var(--good);border-color:transparent}
+.iconbtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:6px 10px;font-weight:600}
+.layout{display:grid;grid-template-columns:380px 1fr;gap:18px;padding:18px 20px 120px;max-width:1700px;margin:0 auto}
+@media (max-width:1180px){.layout{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+/* walkthrough */
+.walk{padding:16px;position:sticky;top:76px;align-self:start;max-height:calc(100vh - 96px);overflow:auto}
+@media (max-width:1180px){.walk{position:static;max-height:none}}
+.progress{height:6px;background:var(--panel2);border-radius:99px;overflow:hidden;margin:6px 0 12px}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--teal));border-radius:99px;transition:width .3s}
+.stepsel{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit}
+.rid{display:inline-block;font-weight:800;font-size:12px;color:var(--accent);background:var(--accent-soft);padding:3px 8px;border-radius:7px;margin-right:6px}
+.pri{display:inline-block;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+.walk h2{font-size:19px;line-height:1.25;margin:10px 0 4px;letter-spacing:-.01em}
+.grp{color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.blk{margin-top:12px}
+.blk h4{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.blk p{margin:0}
+.jtbd{background:var(--accent-soft);border-radius:12px;padding:10px 12px;font-style:italic}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;font-weight:600;padding:3px 8px;border-radius:7px;background:var(--panel2);border:1px solid var(--line)}
+.chip.g{background:var(--good-soft);color:var(--good);border-color:transparent}
+.chip.w{background:var(--warn-soft);color:#b45309;border-color:transparent}
+ul.tight{margin:0;padding-left:18px}
+ul.tight li{margin:2px 0}
+.ctrl{display:flex;gap:8px;margin-top:16px;position:sticky;bottom:-16px;background:var(--panel);padding:12px 0 4px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 14px;border-radius:11px;font-weight:700}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;flex:1}
+.btn:disabled{opacity:.45;cursor:default}
+details summary{cursor:pointer;font-weight:600;color:var(--muted);font-size:12px;margin-top:12px}
+/* stage */
+.stage{display:flex;flex-direction:column;gap:18px;min-width:0}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media (max-width:900px){.row{grid-template-columns:1fr}}
+.paneh{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin:0 4px 8px}
+.paneh .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+/* console window */
+.win{overflow:hidden}
+.titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tl{width:11px;height:11px;border-radius:50%}
+.url{margin-left:10px;flex:1;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 10px;color:var(--muted);font-size:12px}
+.con{display:grid;grid-template-columns:64px 1fr;min-height:520px;position:relative}
+.nav{background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0}
+.nav span{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;color:var(--muted);font-size:16px}
+.nav span.on{background:var(--accent-soft);color:var(--accent)}
+.cmain{padding:16px 18px;min-width:0}
+.chead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chead h3{margin:0;font-size:18px;letter-spacing:-.01em}
+.who{font-size:12px;color:var(--muted)}
+.raise{display:flex;gap:6px;margin-left:auto}
+.raise select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:6px 8px;font:inherit;font-size:13px}
+.banner{display:flex;align-items:center;gap:10px;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:13px}
+.banner.warn{background:var(--warn-soft)} .banner.bad{background:var(--bad-soft)} .banner.info{background:var(--accent-soft)} .banner.good{background:var(--good-soft)}
+.banner b{font-weight:700}
+.banner .act{margin-left:auto;display:flex;gap:6px}
+.sbtn{border:0;border-radius:9px;padding:6px 10px;font-weight:700;font-size:12px;background:var(--ink);color:var(--panel)}
+.sbtn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:12px}
+.fchip{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.fchip.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.fbadge{font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;background:var(--warn);color:#111}
+.fbadge.small{background:transparent;color:var(--muted);font-weight:600;padding:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:12px}
+.rcard{border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--panel2)}
+.rtop{display:flex;align-items:center;gap:10px}
+.av{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;color:#fff}
+.rname{font-weight:700}
+.rarea{font-size:12px;color:var(--muted)}
+.status{margin-left:auto;font-weight:800;font-size:13px;padding:5px 10px;border-radius:9px}
+.status.small{font-size:11px;padding:3px 7px}
+.st-available{background:var(--good-soft);color:var(--good)} .st-engaged{background:var(--accent-soft);color:var(--accent)}
+.st-paused{background:var(--warn-soft);color:#b45309} .st-unreachable{background:var(--bad-soft);color:var(--bad)}
+.live{margin-top:10px;border-radius:10px;padding:8px 10px;background:linear-gradient(90deg,var(--accent-soft),transparent);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.bar{height:7px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:10px}
+.standing{margin-top:8px;font-size:12px;padding:7px 9px;border-radius:9px;background:var(--panel);border:1px dashed var(--line)}
+.flag{margin-top:8px;font-size:12px;font-weight:700;color:#b45309}
+.feed{margin-top:14px}
+.feed h5{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.inc{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;font-size:13px;background:var(--panel)}
+.inc .tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+.inc .pin{font-size:11px;font-weight:700;color:var(--accent)}
+.toasts{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.toasts:empty{display:none}
+.toast{background:var(--ink);color:var(--panel);border-radius:12px;padding:10px 12px;font-size:13px;animation:slide .3s ease;display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline}
+.toast small{opacity:.75}
+@keyframes slide{from{transform:translateY(-8px);opacity:0}}
+.modal{position:absolute;inset:0;background:rgba(15,23,42,.35);display:grid;place-items:center;z-index:6}
+.modal .box{background:var(--panel);border-radius:16px;padding:16px;width:min(360px,90%);box-shadow:var(--shadow)}
+.modal h4{margin:0 0 6px}
+.reasons{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+/* phone */
+.phonewrap{display:flex;flex-direction:column;align-items:center}
+.phone{width:310px;height:640px;border-radius:46px;background:#05070d;padding:12px;box-shadow:0 30px 60px rgba(15,23,42,.25),inset 0 0 0 2px #2a3142;position:relative}
+.screen{position:relative;width:100%;height:100%;border-radius:36px;overflow:hidden;background:radial-gradient(120% 80% at 50% 0%,#1d2547 0%,#0b0f1a 60%);color:#e8ecf7}
+.notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:96px;height:26px;background:#000;border-radius:16px;z-index:3}
+.sbar{display:flex;justify-content:space-between;padding:12px 24px 0;font-size:12px;font-weight:700;color:#cfd6e8}
+.pcontent{position:absolute;inset:44px 0 0 0;padding:14px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.pcard{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:12px}
+.pcard h6{margin:0 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#93a0c4}
+.ptitle{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.toggle{display:flex;justify-content:space-between;align-items:center}
+.sw{width:44px;height:26px;border-radius:99px;background:#10b981;position:relative}
+.sw::after{content:"";position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.sw.off{background:#475569}.sw.off::after{right:auto;left:3px}
+.plist div{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.plist em{font-style:normal;color:#93a0c4;font-size:11px}
+.o-yes{color:#34d399}.o-no{color:#fbbf24}.o-miss{color:#f87171}.o-nc{color:#93a0c4}
+.alert{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:radial-gradient(90% 60% at 50% 35%,rgba(99,102,241,.55),rgba(11,15,26,.98) 70%)}
+.alert.full{animation:flash 1.2s infinite}
+@keyframes flash{50%{background:radial-gradient(90% 60% at 50% 35%,rgba(99,102,241,.85),rgba(11,15,26,.98) 70%)}}
+.ring{width:150px;height:150px;border-radius:50%;display:grid;place-items:center;position:relative}
+.ring b{font-size:44px;font-weight:800}
+.ring small{display:block;font-size:11px;color:#c7cfe6;margin-top:-6px}
+.abtns{display:flex;gap:14px;align-items:center;width:100%;justify-content:space-between;margin-top:8px}
+.pbtn{border:0;border-radius:18px;padding:14px 18px;font-weight:800;font-size:15px}
+.pbtn.yes{background:#10b981;color:#04120c;flex:1}
+.pbtn.no{background:rgba(255,255,255,.12);color:#e8ecf7;padding:10px 14px;font-size:13px}
+.pbtn.plain{background:rgba(255,255,255,.12);color:#e8ecf7;width:100%}
+.lock{position:absolute;inset:0;z-index:2;padding:70px 14px 20px;background:linear-gradient(180deg,#141b33,#05070d)}
+.clock{text-align:center;font-size:58px;font-weight:300;letter-spacing:-.03em}
+.date{text-align:center;color:#aab4d1;margin-top:-6px}
+.notif{margin-top:30px;background:rgba(255,255,255,.12);backdrop-filter:blur(10px);border-radius:20px;padding:12px}
+.notif .app{display:flex;align-items:center;gap:8px;font-size:12px;color:#c7cfe6}
+.notif .app i{width:20px;height:20px;border-radius:6px;background:#4f46e5;display:inline-block}
+.notif .t{font-weight:700;margin-top:6px}
+.notif .acts{display:flex;gap:8px;margin-top:10px}
+.fp{width:64px;height:64px;border-radius:50%;border:2px solid #34d399;display:grid;place-items:center;font-size:28px;margin:18px auto 0;background:rgba(16,185,129,.12)}
+.ptoast{position:absolute;left:12px;right:12px;top:46px;z-index:4;background:#e8ecf7;color:#0b0f1a;border-radius:16px;padding:11px 12px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;animation:slide .3s}
+.ptoast button{margin-left:auto;border:0;border-radius:10px;padding:7px 10px;font-weight:800;background:#0b0f1a;color:#fff}
+.watch{position:absolute;right:-18px;top:96px;z-index:5;width:64px;height:76px;border-radius:18px;background:#05070d;border:2px solid #2a3142;display:grid;place-items:center;color:#a5b4fc;font-size:11px;font-weight:700;text-align:center;animation:buzz .25s infinite}
+@keyframes buzz{50%{transform:translateX(2px)}}
+.nosignal{background:#7f1d1d;color:#fee2e2;border-radius:12px;padding:6px 10px;font-size:12px;font-weight:700;text-align:center}
+.pselect{margin-top:10px;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.pselect select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:5px 8px;font:inherit;font-size:12px}
+/* engine */
+.eng{padding:14px 16px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
+.tabs button{border:0;background:transparent;color:var(--muted);padding:7px 12px;border-radius:9px;font-weight:700;font-size:13px}
+.tabs button.on{background:var(--accent-soft);color:var(--accent)}
+table.t{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+table.t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.t td{padding:8px;border-bottom:1px solid var(--line)}
+table.t tr.top td{background:var(--good-soft)}
+.num{font-variant-numeric:tabular-nums}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.weights{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.wchip{border-radius:10px;padding:6px 10px;background:var(--panel2);border:1px solid var(--line);font-size:12px;font-weight:600}
+.wchip b{font-size:15px;margin-right:4px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel2)}
+.tile .k{font-size:12px;color:var(--muted);font-weight:600}
+.tile .v{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.tile .s{font-size:12px;color:var(--muted)}
+.meter{position:relative;height:16px;border-radius:99px;background:linear-gradient(90deg,var(--bad-soft),var(--warn-soft),var(--good-soft));margin:26px 0 30px}
+.meter .mk{position:absolute;top:-6px;width:3px;height:28px;border-radius:2px;background:var(--ink)}
+.meter .mk span{position:absolute;top:30px;left:50%;transform:translateX(-50%);font-size:11px;white-space:nowrap;color:var(--muted);font-weight:600}
+.meter .dotm{position:absolute;top:-5px;width:26px;height:26px;margin-left:-13px;border-radius:50%;background:var(--accent);border:3px solid var(--panel);box-shadow:var(--shadow);transition:left .4s}
+.meter .dotm.raw{background:var(--muted)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.log{max-height:240px;overflow:auto;font-size:12.5px}
+.log div{padding:5px 0;border-bottom:1px dashed var(--line);display:flex;gap:10px}
+.log code{color:var(--muted);font-family:ui-monospace,Consolas,monospace;font-size:11.5px;min-width:44px}
+.swl{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.swi{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;padding:8px 10px;background:var(--panel2);font-size:13px}
+.swi .sw{transform:scale(.8);flex:none}
+.swi .sw.off{background:#94a3b8}
+.swi small{display:block;color:var(--muted);font-size:11px}
+.chart{display:flex;align-items:flex-end;gap:8px;height:150px;padding:8px 0;border-bottom:1px solid var(--line)}
+.chart div{flex:1;background:var(--accent);border-radius:6px 6px 0 0;position:relative;opacity:.85}
+.chart div.post{background:var(--warn)}
+.chart div span{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700}
+.chartx{display:flex;gap:8px;font-size:10.5px;color:var(--muted)}
+.chartx span{flex:1;text-align:center}
+.intake{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:900px){.intake{grid-template-columns:1fr}}
+.ichart{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel2);min-width:0}
+.ichart.wide{grid-column:1/-1}
+.ih{font-weight:700;margin-bottom:22px}
+.chart.daily{gap:3px}.chartx.daily{gap:3px;font-size:9.5px;line-height:1.15}
+.chart.daily div span{font-size:9.5px}
+.chart div.hl{background:var(--bad);opacity:1}.chart div.hl2{background:var(--good);opacity:1}
+.chartx span.rel{color:var(--bad);font-weight:800}
+.alegend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:-10px 0 8px}
+.alegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.arow{display:grid;grid-template-columns:110px 1fr 74px;gap:10px;align-items:center;font-size:12.5px;padding:3px 0}
+.arow .ab{display:flex;flex-direction:column;gap:2px}
+.arow .ab i{display:block;height:7px;border-radius:4px}
+.arow .ac{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.arow.flat .an,.arow.flat .ac{color:var(--good);font-weight:800}
+.ok{color:var(--good);font-weight:800}.no{color:var(--bad);font-weight:800}
+/* caption + spotlight */
+.caption{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:40;width:min(980px,calc(100% - 32px));background:var(--ink);color:var(--panel);border-radius:18px;padding:14px 18px;box-shadow:0 20px 50px rgba(0,0,0,.3);display:flex;gap:14px;align-items:center}
+.caption .cid{font-weight:800;font-size:12px;background:rgba(255,255,255,.14);padding:4px 8px;border-radius:8px;white-space:nowrap}
+.caption .ctext{font-size:15px;font-weight:500;flex:1}
+.caption .speed{font-size:12px;opacity:.75;white-space:nowrap}
+.caption .capnext{border:0;border-radius:11px;padding:9px 14px;font-weight:800;background:var(--accent);color:#fff;white-space:nowrap;animation:spotpulse 1.4s infinite}
+.pace{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:600}
+.pace .seg button{padding:5px 10px;font-size:12px}
+.spotbox{position:fixed;z-index:35;pointer-events:none;border:3px solid var(--accent);border-radius:16px;
+  box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 28%,transparent),0 0 0 100vmax rgba(15,23,42,.22);
+  transition:left .25s ease,top .25s ease,width .25s ease,height .25s ease;animation:spotpulse 1.4s infinite}
+@keyframes spotpulse{50%{border-color:var(--teal);box-shadow:0 0 0 10px color-mix(in srgb,var(--teal) 22%,transparent),0 0 0 100vmax rgba(15,23,42,.22)}}
+.spotbox::before{content:"Look here";position:absolute;top:-27px;left:-3px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:8px 8px 8px 0;letter-spacing:.04em;white-space:nowrap}
+#pauseBtn.on{background:var(--warn);color:#111}
+.hidden{display:none!important}
+.free label{display:block;font-size:12px;color:var(--muted);font-weight:600;margin:10px 0 4px}
+.free select,.free input{width:100%;padding:7px 9px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit}
+.kv{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;gap:8px;flex-wrap:wrap}
+.eng{overflow-x:auto}
+@media (max-width:760px){
+  .top{flex-wrap:wrap;padding:10px 16px;gap:8px}
+  .brand small,#speedSeg,#rulesPill{display:none}
+  .layout{padding:12px 16px 150px}
+  .phone{width:min(310px,100%)}
+  .watch{display:none}
+  .con{grid-template-columns:1fr}.nav{display:none}
+  
+  .caption{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><div class="logo">R</div><div>Rook Dispatch<small>4.2 recovery · interactive prototype</small></div></div>
+  <div class="seg" id="modeSeg"><button data-mode="walk" class="on">Walkthrough</button><button data-mode="free">Free play</button></div>
+  <div class="grow"></div>
+  <span class="pill" id="rulesPill"></span>
+  <div class="seg" id="speedSeg" title="Pause / simulation speed"><button id="pauseBtn" title="Pause or resume the simulation">❚❚</button><button data-speed="1" class="on">1×</button><button data-speed="4">4×</button><button data-speed="10">10×</button></div>
+  <button class="iconbtn" id="themeBtn" title="Switch light/dark">◐</button>
+</header>
+
+<div class="layout">
+  <aside class="card walk" id="walk"></aside>
+  <section class="stage">
+    <div class="row">
+      <div>
+        <div class="paneh"><span class="dot"></span><span id="conLabel">Handler console</span></div>
+        <div class="card win" id="console"></div>
+      </div>
+      <div class="phonewrap">
+        <div class="paneh"><span class="dot" style="background:var(--teal)"></span><span id="phoneLabel">Responder phone</span></div>
+        <div class="phone" id="phone"></div>
+      </div>
+    </div>
+    <div>
+      <div class="paneh"><span class="dot" style="background:var(--warn)"></span>Behind the scenes · routing engine</div>
+      <div class="card eng" id="engine"></div>
+    </div>
+  </section>
+</div>
+<div class="spotbox hidden" id="spotbox"></div>
+<div class="caption hidden" id="caption"><span class="cid" id="capId"></span><span class="ctext" id="capText"></span><span class="speed" id="capSpeed"></span><button class="capnext hidden" id="capNext" title="Continue (Space or →)">Continue ▸</button></div>
+
+<script>
+/* ============================================================
+   DATA (from rook-database, post-4.2 records, 12 Aug – 6 Sep)
+   ============================================================ */
+const DAY0 = Date.UTC(2026,7,12);              // day 0 = 12 Aug 2026 (4.2 release)
+const dayLabel = d => new Date(DAY0 + d*864e5).toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
+const NEAR = {
+  'Old Town':{'Midtown':12,'Hillcrest':15,'Lakeshore':16,'Eastgate':22},
+  'Midtown':{'Old Town':12,'Hillcrest':13,'Eastgate':14},
+  'Hillcrest':{'Midtown':13,'Old Town':15},
+  'Eastgate':{'Midtown':14,'Foundry Row':16,'Old Town':22},
+  'Lakeshore':{'Old Town':16},
+  'Foundry Row':{'Eastgate':16,'Uptown':18},
+  'Uptown':{'Foundry Row':18},
+};
+const AREAS = ['Old Town','Hillcrest','Eastgate','Midtown','Lakeshore','Foundry Row'];
+const TAGS = ['structural-entry','flight','aquatic','cold-weather','hazmat-tolerant','crowd-management','de-escalation'];
+const COLORS = {vesper:'#8b5cf6',nightwell:'#0ea5e9',vantage:'#f59e0b',longcast:'#14b8a6',mite:'#ec4899',gale:'#6366f1',bulwark:'#64748b',farlight:'#f97316',undertow:'#06b6d4'};
+// Vesper's real post-4.2 record: 5 taken, 3 turned down, 9 missed (day = days after 12 Aug)
+const VESPER = [[1,'miss'],[2,'yes'],[2,'miss'],[3,'yes'],[3,'no'],[3,'yes'],[4,'miss'],[4,'miss'],[4,'yes'],[5,'no'],[7,'miss'],[11,'miss'],[11,'yes'],[11,'miss'],[12,'no'],[14,'miss'],[20,'miss']];
+const BASE = [
+  {id:'vesper',  name:'Vesper',          area:'Old Town',   home:2, handler:'Aunt Dot',       tags:['structural-entry','de-escalation'], old:0.00, rec:VESPER,    usual:13.7, week:4.6,  bot:{act:'yes',after:66}},
+  {id:'nightwell',name:'Nightwell',      area:'Midtown',    home:3, handler:'Marjorie Sung',  tags:['crowd-management','de-escalation'], old:0.92, counts:[47,15,8], usual:15.1, week:18.9, bot:{act:'yes',after:18}},
+  {id:'vantage', name:'Captain Vantage', area:'Hillcrest',  home:3, handler:'Mr. Ambrose',    tags:['structural-entry','flight'],        old:0.88, counts:[42,11,6], usual:12.1, week:15.9, bot:{act:'yes',after:40}},
+  {id:'longcast',name:'The Longcast',    area:'Lakeshore',  home:3, handler:'Graham Petrov',  tags:['aquatic','cold-weather'],           old:0.80, counts:[21,6,5],  usual:7.1,  week:8.6,  bot:{act:'no', after:20}},
+  {id:'mite',    name:'Meteor Mite',     area:'Eastgate',   home:3, handler:'Kip',            tags:['flight','crowd-management'],        old:0.00, counts:[3,3,8],   usual:11.1, week:3.8,  bot:{act:'yes',after:66}},
+  {id:'gale',    name:'The Gale',        area:'Eastgate',   home:4, handler:'Kip',            tags:['flight','aquatic'],                 old:1.00, counts:[48,13,8], usual:13.0, week:18.6, bot:{act:'yes',after:15}},
+  {id:'bulwark', name:'Sgt. Bulwark',    area:'Foundry Row',home:3, handler:'Halloran',       tags:['structural-entry','hazmat-tolerant'],old:0.90,counts:[26,6,7],  usual:9.0,  week:10.5, bot:{act:'yes',after:30}},
+  {id:'farlight',name:'Farlight',        area:'Uptown',     home:3, handler:'Linda Pruitt',   tags:['flight'],                           old:0.00, counts:[2,2,7],   usual:11.9, week:3.0,  bot:{act:'yes',after:66}},
+  {id:'undertow',name:'The Undertow',    area:'Harborside', home:3, handler:'Desmond Okafor', tags:['aquatic'],                          old:0.00, counts:[3,2,9],   usual:11.9, week:3.8,  bot:{act:'yes',after:66}},
+];
+const HANDLERS = ['Aunt Dot','Kip','Mr. Ambrose','Marjorie Sung'];
+const FLOOR = 0.6, PRIOR_N = 5, PRIOR_P = 0.75;
+const W = {no:0.5, miss:1.0, release:1.5};
+const SWITCHES = [
+  ['cheapNo','DR-01','A "no" costs less than a miss'],
+  ['window','DR-02','Score over a time window (recovers)'],
+  ['floor','DR-03','Floor on the score (0.6)'],
+  ['boost','DR-04','Recovery boost (accepts ×3 below the middle)'],
+  ['outArea','DR-05','Out-of-area declines don\'t count'],
+  ['delivered','DR-06','Only count misses that arrived in time'],
+  ['release','DR-07','Release after accepting is costliest'],
+  ['streak','DR-10','Streak → confirm availability'],
+  ['move15','DR-11','Undelivered after 15 s → move on'],
+  ['lock','DR-13','Answer from lock screen (generic + biometric)'],
+  ['alert','DR-14','Hard-to-miss alert + watch'],
+  ['countdown','DR-15','Countdown on the alert'],
+  ['retry','DR-16','Retry delivery with the same ID'],
+  ['undo','DR-17','Change a "no" to accept within 5 s'],
+  ['escalate','DR-19','Keep going + escalate after 3 pings'],
+  ['capFilter','DR-20','Required tags filter (phase 2)'],
+  ['overlap','DR-21','Overlapping offers (deferred)'],
+  ['load','DR-22','Load monitor flag'],
+  ['notify','DR-23','Tell the handler when pinged'],
+  ['standing','DR-24','Standing in plain words'],
+  ['filterSafe','DR-25','Filters: warn, restore, never hide own'],
+];
+const DEFAULT_SW = Object.fromEntries(SWITCHES.map(s=>[s[0],true]));
+DEFAULT_SW.capFilter = false; DEFAULT_SW.overlap = false;
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let S;            // world state
+let MODE = 'walk';
+let STEP = 0;
+let RUN = null;   // running script token
+let renderQueued = false;
+
+function seeded(n){ let x = n*9301+49297; return ()=>{ x=(x*9301+49297)%233280; return x/233280; }; }
+function spread(id,[y,n,m]){
+  const types=[...Array(y).fill('yes'),...Array(n).fill('no'),...Array(m).fill('miss')];
+  const rnd=seeded(id.length*7+y); for(let i=types.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[types[i],types[j]]=[types[j],types[i]];}
+  return types.map((t,i)=>[Math.floor(i*25/types.length),t]);
+}
+function freshWorld(cfg={}){
+  const R = BASE.map(b=>{
+    const rec = (b.rec || spread(b.id,b.counts)).map(([day,type])=>({day,type,credit:type==='yes'?1:0,src:'history'}));
+    return {...b, tags:[...b.tags], bot:{...b.bot}, out:rec, status:'available', engaged:false, online:true, delay:2, dropFirst:false, watch:false,
+            streakMiss:0, streakNo:0, streakUnd:0, deliveredHistory:true};
+  });
+  S = {
+    fixed: cfg.fixed ?? true, sw:{...DEFAULT_SW, ...(cfg.sw||{})}, windowDays: cfg.windowDays || 30,
+    R, callouts:[], pings:[], log:[], now:0, today:26, speed:1,
+    handler: cfg.handler || 'Aunt Dot', phoneRid: cfg.phone || 'vesper', phoneLocked: !!cfg.locked,
+    tab: cfg.tab || 'ranking', ops: cfg.ops || null, toasts:[], banners:[], messages:[], modal:null,
+    undo:null, phoneNote:null, unlocking:null, preview: cfg.preview || {area:'Old Town', need:[]},
+    filters:{active:cfg.filters||[], restoreFrom:null, user:'main'}, coverFilters:[], signedIn:'main',
+    spot:null, nextId:12, opsData:{}, maxOpen:0,
+  };
+  if (cfg.prep) cfg.prep(S);
+  pushLog(`World reset · ${S.fixed?'with fixes':'4.2 as shipped'}`);
+}
+const byId = id => S.R.find(r=>r.id===id);
+function pushLog(text){ S.log.unshift({t:S.now,text}); if(S.log.length>80) S.log.pop(); }
+const fmtT = s => { s=Math.max(0,Math.round(s)); return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; };
+const on = k => S.fixed && S.sw[k];
+
+/* ============================================================
+   SCORING
+   ============================================================ */
+function counted(o){ return !['no_out','miss_late','undelivered','release_ex','withdrawn'].includes(o.type); }
+function rawScore(r, today=S.today, extra=[]){
+  const from = on('window') ? today - S.windowDays : -9999;
+  let cr=0,no=0,mi=0,rel=0;
+  for (const o of [...r.out,...extra]){
+    if (o.day <= from) continue;
+    if (o.type==='yes' && !o.released) cr += o.credit;
+    else if (o.type==='no') no += 1;
+    else if (o.type==='miss') mi += 1;
+    else if (o.type==='release') rel += 1;
+  }
+  const noW = on('cheapNo') ? W.no : W.miss;
+  return (cr + PRIOR_P*PRIOR_N) / (cr + noW*no + W.miss*mi + W.release*rel + PRIOR_N);
+}
+function middle(){ const xs=S.R.map(r=>rawScore(r)).sort((a,b)=>a-b); const n=xs.length; return n%2?xs[(n-1)/2]:(xs[n/2-1]+xs[n/2])/2; }
+function histScore(r){ if(!S.fixed) return r.old; const s=rawScore(r); return on('floor')?Math.max(FLOOR,s):s; }
+function acceptsToMiddle(r, boost){
+  const mid = middle(); let extra=[]; let n=0;
+  while (rawScore(r,S.today,extra) < mid && n<80){ extra.push({day:S.today,type:'yes',credit: boost?3:1}); n++; }
+  return n;
+}
+function backToNormalDay(r){
+  const mid = middle();
+  for (let d=S.today; d<S.today+60; d++){ if (rawScore(r,d) >= mid) return d; }
+  return null;
+}
+function record(r, type, extra={}){
+  if (!S.fixed){
+    if (type==='yes') r.old = Math.min(1, r.old+0.08);
+    else if (['no','miss','undelivered','no_out','miss_late'].includes(type)) r.old = Math.max(0, r.old-0.12);
+    return null;
+  }
+  let credit = 0;
+  if (type==='yes') credit = (on('boost') && rawScore(r) < middle()) ? 3 : 1;
+  const o = {day:S.today, type, credit, ...extra};
+  r.out.push(o);
+  // streaks
+  if (type==='miss'){ r.streakMiss++; r.streakNo=0; }
+  else if (type==='no'){ r.streakNo++; r.streakMiss=0; }
+  else if (type==='yes'){ r.streakMiss=0; r.streakNo=0; r.streakUnd=0; }
+  if (type==='undelivered'){ r.streakUnd++; } else if (type!=='withdrawn') { r.streakUnd = type==='undelivered'?r.streakUnd:0; }
+  if (on('streak') && r.status==='available' && (r.streakMiss>=3 || r.streakNo>=5)){
+    const why = r.streakMiss>=3 ? `${r.streakMiss} delivered misses in a row` : `${r.streakNo} declines in a row`;
+    r.status='paused'; r.pauseWhy = why;
+    pushLog(`${r.name} paused: ${why}. Asked to confirm availability; handler alerted.`);
+  }
+  if (on('move15') && r.streakUnd>=2 && r.status==='available'){
+    r.status='unreachable'; pushLog(`${r.name} marked unreachable: 2 undelivered pings in a row. Handler alerted.`);
+  }
+  return o;
+}
+
+/* ============================================================
+   ROUTING
+   ============================================================ */
+function travel(r, area){ if (r.area===area) return r.home; return (NEAR[area]&&NEAR[area][r.area]) || (NEAR[r.area]&&NEAR[r.area][area]) || 38; }
+function rankFor(c, includeAll=false){
+  const rows = S.R.filter(r=> includeAll || (r.status==='available' && !r.engaged)).map(r=>{
+    const min = travel(r,c.area);
+    const prox = min>=45 ? 0 : 1 - min/45;
+    const raw = S.fixed ? rawScore(r) : r.old;
+    const acc = histScore(r);
+    const cap = c.need && c.need.length ? c.need.filter(t=>r.tags.includes(t)).length / c.need.length : 1;
+    const total = 0.60*prox + 0.25*acc + 0.15*cap;
+    return {r,min,prox,raw,acc,cap,total};
+  }).filter(x=> !(on('capFilter') && x.cap<1));
+  rows.sort((a,b)=>b.total-a.total);
+  return rows;
+}
+function raise(area, opts={}){
+  const c = {id:++S.nextId, area, need:opts.need||[], what:opts.what||'Incident reported', at:S.now, pings:[], state:'open', tried:new Set(opts.skip||[]), escalated:false, stopAfterOne:!!opts.stopAfterOne};
+  S.callouts.unshift(c); S.lastCallout = c;
+  pushLog(`Callout #${c.id} raised in ${area}${c.need.length?` (needs ${c.need.join(', ')})`:''}.`);
+  nextPing(c); queueRender(); return c;
+}
+function nextPing(c){
+  if (c.state!=='open') return;
+  const primaries = c.pings.filter(p=>p.role==='primary').length;
+  if (!S.fixed && c.stopAfterOne && primaries>=1){ c.state='unfilled'; pushLog(`Callout #${c.id} ended after one ping. Nobody else was asked.`); return; }
+  if (on('escalate') && primaries>=3 && !c.escalated){ c.escalated=true; pushLog(`Callout #${c.id}: 3 pings without a yes. Handler alerted to override.`); }
+  const cand = rankFor(c).find(x=>!c.tried.has(x.r.id));
+  if (!cand){ c.state='unfilled'; pushLog(`Callout #${c.id} unfilled: nobody left to ask.`); return; }
+  sendPing(c, cand.r, 'primary');
+}
+function sendPing(c, r, role){
+  const p = {id:'p'+(S.pings.length+1), cid:c.id, rid:r.id, role, sentAt:S.now, deliveredAt:null, answeredAt:null, outcome:null, held:false, late:false, retried:false, attempt1Failed:false};
+  c.tried.add(r.id); c.pings.push(p); S.pings.push(p);
+  pushLog(`${role==='standby'?'Stand-by ping':'Ping'} sent to ${r.name} (${travel(r,c.area)} min away).`);
+  if (on('notify')) S.toasts.push({kind:'ping', pid:p.id, rid:r.id});
+  return p;
+}
+const calloutOf = p => S.callouts.find(c=>c.id===p.cid);
+const activePings = () => S.pings.filter(p=>!p.outcome || p.held && !p.outcome);
+function finish(p, type){
+  if (p.outcome) return;
+  const r = byId(p.rid), c = calloutOf(p);
+  p.outcome = type; p.closedAt = S.now; S.maxOpen = Math.max(S.maxOpen, S.now-p.sentAt);
+  let recType = type;
+  if (type==='miss'){
+    if (on('delivered') && (!p.deliveredAt || p.late)) { recType = p.deliveredAt ? 'miss_late' : 'undelivered'; p.note = p.deliveredAt ? `Arrived with ${Math.round(60-(p.deliveredAt-p.sentAt))} s left: not counted` : 'Never arrived: not counted'; }
+    pushLog(`${r.name} missed the ping (${fmtT(S.now-p.sentAt)}).${p.note?' '+p.note+'.':''}`);
+  }
+  if (type==='undelivered'){ p.note='No delivery receipt in 15 s: moved on, not counted'; pushLog(`${r.name}: no delivery receipt after 15 s. Moved on, no penalty.`); }
+  if (type!=='withdrawn') record(r, recType, {pid:p.id});
+  else pushLog(`${r.name}'s ${p.role==='standby'?'stand-by ':''}ping withdrawn: covered by someone else. No effect on standing.`);
+  // standby handling
+  const sb = c.pings.find(x=>x.role==='standby' && (!x.outcome || x.held) && x.id!==p.id);
+  if (c.state==='open' && p.role==='primary' && type!=='yes' && type!=='withdrawn'){
+    if (sb && sb.held){ assign(c, sb); return; }
+    if (sb){ sb.role='primary'; pushLog(`${byId(sb.rid).name} is now first in line.`); return; }
+    nextPing(c);
+  }
+}
+function assign(c, p){
+  const r = byId(p.rid);
+  p.outcome='yes'; p.held=false; p.answeredAt = p.answeredAt||S.now; p.closedAt=S.now;
+  c.state='filled'; c.by=r.id; c.filledAt=S.now; r.engaged=true;
+  record(r,'yes',{pid:p.id, cid:c.id});
+  pushLog(`${r.name} took callout #${c.id} at ${fmtT(S.now-c.at)}.`);
+  for (const o of c.pings) if (o!==p && (!o.outcome || o.held)){ o.held=false; finish(o,'withdrawn'); }
+}
+function answer(p, act){
+  if (!p || p.outcome) return;
+  const r = byId(p.rid), c = calloutOf(p);
+  p.answeredAt = S.now;
+  if (act==='yes'){
+    if (c.state!=='open'){ return; }
+    const primary = c.pings.find(x=>x.role==='primary' && !x.outcome);
+    if (p.role==='standby' && primary){ p.held=true; pushLog(`${r.name} said yes on stand-by: "You're next, confirming shortly."`); queueRender(); return; }
+    assign(c,p); queueRender(); return;
+  }
+  // decline
+  const outA = on('outArea') && (r.area!==c.area || travel(r,c.area)>45);
+  p.outcome='no'; p.closedAt=S.now; S.maxOpen = Math.max(S.maxOpen, S.now-p.sentAt);
+  const o = record(r, outA?'no_out':'no', {pid:p.id});
+  if (outA){ p.note='Outside your area: no effect on standing'; if (r.id===S.phoneRid) S.phoneNote={text:'Outside your area. This doesn\'t affect your standing.', until:Date.now()+6000}; }
+  pushLog(`${r.name} declined after ${Math.round(S.now-p.sentAt)} s.${outA?' Out of area: not counted.':''}`);
+  if (r.id===S.phoneRid && on('undo')) S.undo = {pid:p.id, until:Date.now()+5000, rec:o};
+  if (p.role==='primary'){
+    const sb = c.pings.find(x=>x.role==='standby' && (!x.outcome || x.held));
+    if (sb && sb.held){ assign(c,sb); }
+    else if (sb){ sb.role='primary'; }
+    else nextPing(c);
+  }
+  queueRender();
+}
+function undoDecline(){
+  if (!S.undo || Date.now()>S.undo.until) return;
+  const p = S.pings.find(x=>x.id===S.undo.pid); const c = calloutOf(p); const r = byId(p.rid);
+  if (c.state!=='open'){ S.undo=null; return; }
+  if (S.undo.rec){ r.out.splice(r.out.indexOf(S.undo.rec),1); r.streakNo=Math.max(0,r.streakNo-1); }
+  for (const o of c.pings) if (o!==p && (!o.outcome || o.held)){ o.held=false; finish(o,'withdrawn'); }
+  p.outcome=null; S.undo=null;
+  pushLog(`${r.name} changed "no" to accept within 5 s.`);
+  assign(c,p); queueRender();
+}
+function releaseCallout(rid){
+  const r = byId(rid); const c = S.callouts.find(x=>x.by===rid && x.state==='filled');
+  if (!c) return;
+  const p = c.pings.find(x=>x.rid===rid && x.outcome==='yes');
+  c.state='open'; c.by=null; r.engaged=false;
+  pushLog(`${r.name} released callout #${c.id} after accepting. It goes straight back out.`);
+  if (S.fixed){
+    const rec = r.out.slice().reverse().find(o=>o.type==='yes' && o.pid===p.id);
+    if (on('release')) S.modal = {kind:'release', rid, cid:c.id, rec};
+  }
+  nextPing(c); queueRender();
+}
+function decideRelease(excused, reason){
+  const m = S.modal; if (!m) return; const r = byId(m.rid);
+  if (m.rec) m.rec.released = true;
+  if (excused){ r.out.push({day:S.today,type:'release_ex',credit:0,reason}); pushLog(`Handler excused ${r.name}'s release: "${reason}". No penalty; the accept doesn't count either.`); }
+  else { r.out.push({day:S.today,type:'release',credit:0}); pushLog(`Release not excused: ${r.name}'s accept credit removed and the release counts 1.5 against.`); }
+  S.modal=null; queueRender();
+}
+function onScene(rid){ const c=S.callouts.find(x=>x.by===rid && x.state==='filled'); if(!c) return; const p=c.pings.find(x=>x.rid===rid&&x.outcome==='yes'); p.onSceneAt=S.now; c.onScene=true; pushLog(`${byId(rid).name} marked on scene.`); queueRender(); }
+function override(cid, rid){
+  const c = S.callouts.find(x=>x.id===cid); const r = byId(rid);
+  for (const o of c.pings) if (!o.outcome || o.held){ o.held=false; finish(o,'withdrawn'); }
+  c.state='filled'; c.by=rid; c.override=true; c.filledAt=S.now; r.engaged=true; c.escalated=false;
+  pushLog(`Handler override: callout #${c.id} assigned to ${r.name}. Logged in the routing override audit log.`);
+  queueRender();
+}
+
+/* ============================================================
+   CLOCK
+   ============================================================ */
+let lastT = performance.now();
+let PAUSED = false, pausedAt = 0, HOLD = false;
+function setPaused(v){
+  if (v === PAUSED) return;
+  PAUSED = v;
+  if (v) pausedAt = Date.now();
+  else {
+    const d = Date.now() - pausedAt;                 // shift real-time deadlines by the pause length
+    if (S.undo) S.undo.until += d;
+    if (S.phoneNote) S.phoneNote.until += d;
+    lastT = performance.now();
+  }
+  document.getElementById('pauseBtn').textContent = PAUSED ? '▶' : '❚❚';
+  document.getElementById('pauseBtn').classList.toggle('on', PAUSED);
+  renderTop(); if (MODE==='walk') renderWalk();
+}
+function tick(){
+  if (PAUSED || HOLD){ lastT = performance.now(); return; }
+  const t = performance.now(); const dt = Math.min(1,(t-lastT)/1000); lastT = t;
+  const step = dt * S.speed; let changed=false;
+  if (S.pings.some(p=>!p.outcome) || S.unlocking){ S.now += step; changed=true; }
+  for (const p of S.pings){
+    if (p.outcome) continue;
+    const r = byId(p.rid); const age = S.now - p.sentAt;
+    if (!p.deliveredAt){
+      if (r.online){
+        if (r.dropFirst && !p.retried){
+          if (!p.attempt1Failed && age>=1){ p.attempt1Failed=true; pushLog(`Push to ${r.name}: attempt 1 failed.`); }
+          if (on('retry') && age>=3){ p.retried=true; p.deliveredAt=S.now; pushLog(`Retry with the same ping ID delivered to ${r.name} at 3 s. Shown once.`); }
+        } else if (age>=r.delay){ p.deliveredAt=S.now; if (age>15) p.late=true; pushLog(`Delivered to ${r.name} at ${Math.round(age)} s.`); }
+      }
+      if (!p.deliveredAt && on('move15') && age>=15 && !p.held){ finish(p,'undelivered'); changed=true; continue; }
+    }
+    if (p.deliveredAt && r.id!==S.phoneRid && r.bot.act!=='none' && !p.held && S.now - p.deliveredAt >= r.bot.after){
+      answer(p, r.bot.act); changed=true; continue;
+    }
+    const c = calloutOf(p);
+    if (on('overlap') && p.role==='primary' && !p.standbyStarted && age>=45 && c.state==='open'){
+      p.standbyStarted=true; const cand = rankFor(c).find(x=>!c.tried.has(x.r.id));
+      if (cand) sendPing(c,cand.r,'standby');
+    }
+    if (!p.held && age>=60){ finish(p,'miss'); changed=true; }
+    if (p.held && c.state==='open'){ const pr = c.pings.find(x=>x.role==='primary' && !x.outcome); if (!pr) { assign(c,p); changed=true; } }
+  }
+  if (S.unlocking && S.now >= S.unlocking){ S.unlocking=null; S.phoneLocked=false; pushLog('Phone unlocked.'); changed=true; }
+  if (S.undo && Date.now()>S.undo.until){ S.undo=null; changed=true; }
+  if (S.phoneNote && Date.now()>S.phoneNote.until){ S.phoneNote=null; changed=true; }
+  if (changed || S.undo || S.phoneNote) queueRender();
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+/* Update a pane in place: only nodes that actually changed are touched, so
+   animations don't restart and nothing flickers while the clock runs. */
+function morph(el, html){
+  const t = document.createElement('template'); t.innerHTML = html;
+  patchChildren(el, t.content);
+}
+function patchChildren(a, b){
+  const an = [...a.childNodes], bn = [...b.childNodes];
+  for (let i=0; i<bn.length; i++){
+    const x = an[i], y = bn[i];
+    if (!x){ a.appendChild(y.cloneNode(true)); continue; }
+    if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName){ a.replaceChild(y.cloneNode(true), x); continue; }
+    if (x.nodeType !== 1){ if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+    for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+    patchChildren(x, y);
+  }
+  for (let i=an.length-1; i>=bn.length; i--) a.removeChild(an[i]);
+}
+function queueRender(){ if (renderQueued) return; renderQueued=true; requestAnimationFrame(()=>{ renderQueued=false; render(); }); }
+let lastRender = 0;
+function render(){
+  const t = performance.now(); if (t-lastRender < 90){ queueRender(); return; } lastRender = t;
+  const ae=document.activeElement; const busy = ae && ae.tagName==='SELECT';
+  const st = spotTab(S.spot); if (st && S.tab!==st) S.tab = st;   // show the engine tab that holds the highlighted item
+  renderTop(); if(!(busy && ae.closest('#console'))) renderConsole(); renderPhone(); if(!(busy && ae.closest('#engine'))) renderEngine(); applySpot();
+}
+function renderTop(){
+  const pill = document.getElementById('rulesPill');
+  pill.className = 'pill ' + (S.fixed?'new':'old'); pill.textContent = S.fixed ? '● With fixes' : '● 4.2 as shipped';
+  document.querySelectorAll('#speedSeg button[data-speed]').forEach(b=>b.classList.toggle('on', +b.dataset.speed===S.speed));
+  document.getElementById('capSpeed').textContent = PAUSED ? '❚❚ Paused' : S.speed>1 ? `⏩ ${S.speed}× time` : '';
+}
+const statusText = r => r.engaged?'Engaged':r.status==='paused'?'Paused':r.status==='unreachable'?'Unreachable':'Available';
+const statusCls = r => r.engaged?'st-engaged':'st-'+r.status;
+function standingText(r){
+  const raw = rawScore(r), mid = middle();
+  if (raw >= mid) return {lvl:'Normal priority', txt:'Answering as usual.'};
+  const misses = r.out.filter(o=>o.type==='miss' && o.day > S.today - S.windowDays).length;
+  const k = acceptsToMiddle(r, on('boost')); const d = backToNormalDay(r);
+  return {lvl:'Lower priority', txt:`${misses} recent missed pings. Back to normal after about ${k} accepts (about ${k<=8?'a week':Math.ceil(k/8)+' weeks'} of normal work)${d!==null?`, or by ${dayLabel(d)} as they age out`:''}.`};
+}
+function renderConsole(){
+  const mine = S.R.filter(r=>r.handler===S.handler);
+  const areas = new Set(mine.map(r=>r.area));
+  const toasts = S.toasts.filter(t=>{ const p=S.pings.find(x=>x.id===t.pid); return p && !p.outcome && byId(t.rid).handler===S.handler; });
+  const banners = [];
+  for (const r of mine){
+    if (S.fixed && r.status==='paused') banners.push(`<div class="banner warn" data-spot="banner-paused"><span>⏸</span><div><b>${r.name} paused:</b> ${r.pauseWhy}. Asked to confirm availability. Nothing has been buried.</div><div class="act"><button class="sbtn" data-act="avail" data-rid="${r.id}">Mark available</button></div></div>`);
+    if (S.fixed && r.status==='unreachable') banners.push(`<div class="banner bad" data-spot="banner-unreach"><span>📵</span><div><b>${r.name} is unreachable:</b> the last 2 pings never reached the phone. Routing skips them until the app checks in.</div></div>`);
+  }
+  for (const c of S.callouts) if (c.escalated && c.state==='open' && areas.has(c.area)){
+    const opts = S.R.filter(r=>r.status==='available'&&!r.engaged).map(r=>`<option value="${r.id}">${r.name} · ${travel(r,c.area)} min</option>`).join('');
+    banners.push(`<div class="banner bad" data-spot="banner-escalate"><span>⚠️</span><div><b>Nobody has taken callout #${c.id} in ${c.area}</b> after ${c.pings.filter(p=>p.role==='primary').length} pings. Assign someone?</div><div class="act"><select id="ovSel">${opts}</select><button class="sbtn" data-act="override" data-cid="${c.id}">Assign</button></div></div>`);
+  }
+  if (S.filters.restoreFrom) banners.push(`<div class="banner info" data-spot="banner-filter"><span>🔁</span><div><b>An update reset your filters.</b> You were filtering on ${S.filters.restoreFrom.join(', ')}.</div><div class="act"><button class="sbtn" data-act="restoreFilters">Restore</button></div></div>`);
+  for (const m of S.messages) if (m.to===S.handler) banners.push(`<div class="banner good" data-spot="banner-msg"><span>✉️</span><div><b>${m.from}:</b> ${m.text}</div></div>`);
+  const fl = S.signedIn==='main' ? S.filters.active : S.coverFilters;
+  const filterChips = ['structural-entry','flight','aquatic','cold-weather'].map(t=>`<button class="fchip ${fl.includes(t)?'on':''}" data-act="filter" data-tag="${t}">${t}</button>`).join('');
+  const filterBadge = fl.length ? (on('filterSafe') ? `<span class="fbadge" data-spot="fbadge">Filter on · ${fl.length}</span><button class="sbtn ghost" data-act="clearFilters">Clear all</button>` : `<span class="fbadge small">${fl.length} filter(s)</span>`) : '';
+  const cards = mine.map(r=>{
+    const lp = S.pings.find(p=>p.rid===r.id && !p.outcome);
+    const live = lp && on('notify') ? `<div class="live" data-spot="live-${r.id}">🔔 Being pinged for #${lp.cid} · <span class="num">${Math.max(0,Math.ceil(60-(S.now-lp.sentAt)))} s</span> left</div>` : '';
+    const st = S.fixed && on('standing') ? standingText(r) : null;
+    const loadPct = Math.round((r.week/r.usual-1)*100);
+    return `<div class="rcard" data-spot="card-${r.id}">
+      <div class="rtop"><div class="av" style="background:${COLORS[r.id]}">${r.name.replace('The ','').replace('Captain ','').replace('Sgt. ','')[0]}</div>
+      <div><div class="rname">${r.name}</div><div class="rarea">${r.area} · ${r.tags.join(', ')}</div></div>
+      <span class="status ${statusCls(r)}">${statusText(r)}</span></div>
+      ${live}
+      <div class="meta"><span>Pings this week</span><span class="num"><b>${r.week}</b> / usual ${r.usual}</span></div>
+      <div class="bar"><i style="width:${Math.min(100,r.week/Math.max(r.usual,r.week)*100)}%;background:${r.week<r.usual*0.7?'var(--bad)':r.week>r.usual*1.3?'var(--warn)':'var(--accent)'}"></i></div>
+      ${on('load') && loadPct>30 ? `<div class="flag" data-spot="flag-${r.id}">⚑ ${loadPct}% above usual this week</div>`:''}
+      ${st?`<div class="standing" data-spot="standing-${r.id}"><b>${st.lvl}.</b> ${st.txt}</div>`:''}
+      <div class="meta"><button class="sbtn ghost" data-act="editTags" data-rid="${r.id}">Edit tags</button>${r.engaged?`<button class="sbtn ghost" data-act="free" data-rid="${r.id}">Back from job</button>`:''}</div>
+    </div>`;
+  }).join('');
+  const own = new Set(mine.map(r=>r.id));
+  const feed = S.callouts.slice(0,6).map(c=>{
+    const involves = c.pings.some(p=>own.has(p.rid));
+    const matches = !fl.length || c.need.some(t=>fl.includes(t)) || (!c.need.length && fl.length===0);
+    const hiddenByFilter = fl.length && !c.need.some(t=>fl.includes(t));
+    if (hiddenByFilter && !(involves && on('filterSafe'))) return '';
+    const who = c.by ? `→ ${byId(c.by).name}` : c.state==='unfilled'?'unfilled':'offering…';
+    return `<div class="inc" data-spot="inc-${c.id}"><span class="tag">#${c.id}</span><span>${c.area}${c.need.length?` · needs ${c.need.join(', ')}`:''}</span><span style="margin-left:auto;font-weight:600">${who}</span>${hiddenByFilter&&involves?`<span class="pin">📌 Shown: involves ${[...own].map(id=>byId(id).name).find(n=>c.pings.some(p=>byId(p.rid).name===n))}</span>`:''}</div>`;
+  }).join('') || `<div class="note">No callouts yet.</div>`;
+  const modal = S.modal && S.modal.kind==='release' && byId(S.modal.rid).handler===S.handler ? `<div class="modal"><div class="box" data-spot="modal">
+      <h4>${byId(S.modal.rid).name} released callout #${S.modal.cid}</h4><div class="note">It has already gone back out. Was this release excused?</div>
+      <div class="reasons"><button class="sbtn ghost" data-act="excuse" data-why="Gear failed on the way">Excused: gear failed on the way</button><button class="sbtn ghost" data-act="excuse" data-why="Injured / unsafe to attend">Excused: unsafe to attend</button><button class="sbtn" data-act="noexcuse">Not excused</button></div></div></div>` : '';
+  const toastHtml = toasts.map(t=>{ const p=S.pings.find(x=>x.id===t.pid); const r=byId(t.rid); return `<div class="toast" data-spot="toast"><b>🔔 ${r.name} is being pinged</b><small>Callout #${p.cid} · ${Math.max(0,Math.ceil(60-(S.now-p.sentAt)))} s left · ♪ ${r.name} chime</small><small>Notification only. ${r.name} answers on their phone.</small></div>`; }).join('');
+  document.getElementById('conLabel').textContent = `Handler console · ${S.handler}${S.signedIn!=='main'?' (covering handler signed in)':''}`;
+  morph(document.getElementById('console'), `
+    <div class="titlebar"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span><span class="url">console.rook.app/coverage</span></div>
+    <div class="con">
+      <div class="nav"><span class="on">◎</span><span>☰</span><span>⚙</span><span>✉</span></div>
+      <div class="cmain">
+        <div class="chead"><div><h3>Coverage</h3><div class="who">Signed in as ${S.signedIn==='main'?S.handler:'Covering handler'} · <a href="#" data-act="switchUser" data-spot="signin" style="color:var(--accent)">switch</a></div></div>
+          <div class="raise"><select id="raiseArea">${AREAS.map(a=>`<option ${[...areas][0]===a?'selected':''}>${a}</option>`).join('')}</select><button class="sbtn" data-act="raise" data-spot="raise">Raise callout</button></div></div>
+        <div class="toasts">${toastHtml}</div>
+        ${banners.join('')}
+        <div class="filters" data-spot="filters"><span class="who">Filters:</span>${filterChips}${filterBadge}<button class="sbtn ghost" data-act="update" style="margin-left:auto" title="Simulate an overnight app update">Simulate update</button></div>
+        <div class="cards">${cards}</div>
+        <div class="feed"><h5>Callouts</h5>${feed}</div>
+      </div>
+      ${modal}
+    </div>`);
+}
+function ringSvg(left){
+  const f = Math.max(0,Math.min(1,left/60)); const C = 2*Math.PI*66;
+  const col = left>30?'#34d399':left>15?'#fbbf24':'#f87171';
+  return `<svg width="150" height="150" style="position:absolute;inset:0;transform:rotate(-90deg)"><circle cx="75" cy="75" r="66" stroke="rgba(255,255,255,.12)" stroke-width="10" fill="none"/><circle cx="75" cy="75" r="66" stroke="${col}" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-f)}"/></svg>`;
+}
+function renderPhone(){
+  const r = byId(S.phoneRid);
+  const p = S.pings.find(x=>x.rid===r.id && (!x.outcome || x.held) && x.deliveredAt);
+  const c = p && calloutOf(p);
+  const left = p ? Math.max(0, 60 - (S.now - p.sentAt)) : 0;
+  const engagedC = S.callouts.find(x=>x.by===r.id && x.state==='filled');
+  let overlay = '';
+  if (p && p.held){
+    overlay = `<div class="alert"><div class="ptitle">You're next</div><div>Callout #${c.id} · ${c.area}</div><div style="color:#c7cfe6;font-size:13px">A nearer responder still has ${Math.ceil(left)} s to answer. If they don't, it's yours.</div><div style="font-size:12px;color:#93a0c4">If they take it, this doesn't affect your standing.</div></div>`;
+  } else if (p && S.phoneLocked){
+    if (S.fixed && S.sw.lock){
+      overlay = `<div class="lock"><div class="clock">21:14</div><div class="date">Monday 7 September</div>
+        <div class="notif" data-spot="lock-notif"><div class="app"><i></i> Notification · now</div><div class="t">New request</div><div style="font-size:13px;color:#c7cfe6">Respond${on('countdown')?` · ${Math.ceil(left)} s`:''}</div>
+        <div class="acts"><button class="pbtn yes" data-act="fpAccept" data-spot="fp">Accept with fingerprint</button><button class="pbtn no" data-act="ans" data-a="no">Decline</button></div></div>
+        <div class="fp" data-spot="fpicon">☝︎</div><div style="text-align:center;font-size:11px;color:#93a0c4;margin-top:6px">Accepting needs your fingerprint or face</div></div>`;
+    } else {
+      overlay = `<div class="lock"><div class="clock">21:14</div><div class="date">Monday 7 September</div>
+        <div class="notif" data-spot="lock-notif"><div class="app"><i></i> ROOK DISPATCH · now</div><div class="t">Callout #${c.id}: ${c.area}</div><div style="font-size:13px;color:#c7cfe6">${c.what}${c.need.length?' · needs '+c.need.join(', '):''}</div>
+        <div class="acts"><button class="pbtn plain" data-act="unlock" data-spot="unlock">${S.unlocking?'Unlocking…':'Unlock to respond'}</button></div></div>
+        <div style="text-align:center;font-size:11px;color:#fca5a5;margin-top:14px">Anyone who can see this phone can read it.</div></div>`;
+    }
+  } else if (p){
+    const full = on('alert');
+    overlay = `<div class="alert ${full?'full':''}" data-spot="alert"><div style="font-size:12px;letter-spacing:.1em;color:#c7cfe6">CALLOUT #${c.id}</div><div class="ptitle">${c.area}</div><div style="font-size:13px;color:#c7cfe6;max-width:240px">${c.what}</div>
+      <div class="ring" data-spot="ring">${on('countdown')?ringSvg(left):''}<div><b class="num">${on('countdown')?Math.ceil(left):'⏱'}</b><small>${on('countdown')?'seconds left':'answer quickly'}</small></div></div>
+      <div style="font-size:12px;color:#c7cfe6">${travel(r,c.area)} min away</div>
+      <div class="abtns"><button class="pbtn no" data-act="ans" data-a="no" data-spot="decline">${on('undo')?'Swipe to decline':'Decline'}</button><button class="pbtn yes" data-act="ans" data-a="yes" data-spot="accept">Accept</button></div></div>`;
+  } else if (engagedC){
+    overlay = `<div class="alert" style="background:radial-gradient(90% 60% at 50% 35%,rgba(16,185,129,.45),rgba(11,15,26,.98) 70%)"><div style="font-size:12px;letter-spacing:.1em;color:#c7cfe6">CALLOUT #${engagedC.id} · YOURS</div><div class="ptitle">${engagedC.onScene?'On scene':'On your way'}</div><div style="color:#c7cfe6">${engagedC.area} · ${travel(r,engagedC.area)} min</div>
+      <div class="abtns" style="flex-direction:column;gap:10px"><button class="pbtn yes" style="width:100%" data-act="onscene" data-spot="onscene">${engagedC.onScene?'✓ On scene':'I\'m on scene'}</button><button class="pbtn no" style="width:100%" data-act="release" data-spot="releaseBtn">Can't make it</button></div></div>`;
+  } else if (S.fixed && r.status==='paused'){
+    overlay = `<div class="alert" data-spot="paused"><div class="ptitle">Still available?</div><div style="color:#c7cfe6;font-size:13px">You've had ${r.pauseWhy}. We've paused new requests so they don't wait on you. Nothing has been held against you.</div><button class="pbtn yes" style="width:100%" data-act="avail" data-rid="${r.id}" data-spot="imavail">I'm available</button><button class="pbtn no" style="width:100%" data-act="noop">Keep me paused</button></div>`;
+  }
+  const st = S.fixed && on('standing') ? standingText(r) : null;
+  const recent = S.pings.filter(x=>x.rid===r.id && x.outcome).slice(-5).reverse().map(x=>{
+    const cls = x.outcome==='yes'?'o-yes':x.outcome==='no'?'o-no':x.outcome==='withdrawn'?'o-nc':'o-miss';
+    const label = {yes:'Accepted',no:'Declined',miss:'Missed',undelivered:'Never arrived',withdrawn:'Covered by someone else'}[x.outcome]||x.outcome;
+    return `<div><span>#${x.cid} · <span class="${cls}">${label}</span></span><em>${x.note||(x.outcome==='withdrawn'?'no effect':'')}</em></div>`;
+  }).join('') || `<div><span style="color:#93a0c4">No requests yet today</span></div>`;
+  const quiet = (!S.fixed && r.week < r.usual*0.5) ? `<div class="pcard" style="border-color:rgba(248,113,113,.35)"><h6>This week</h6><div>Only ${r.week} requests (usually ${r.usual}). No reason given.</div></div>` : '';
+  const hasUndo = S.undo && S.pings.find(x=>x.id===S.undo.pid)?.rid===r.id;
+  const ptoast = (S.phoneNote ? `<div class="ptoast" data-spot="pnote" style="top:${hasUndo?106:46}px">ℹ️ ${S.phoneNote.text}</div>` : '')
+      + (hasUndo ? `<div class="ptoast" data-spot="undo">Declined · passed on <button data-act="undo">Change to accept (${Math.max(0,Math.ceil((S.undo.until-Date.now())/1000))})</button></div>` : '');
+  const watch = (p && on('alert') && r.watch) ? `<div class="watch" data-spot="watch">⌚<br>Request<br>${Math.ceil(left)}s</div>` : '';
+  document.getElementById('phoneLabel').textContent = `Responder phone · ${r.name}`;
+  morph(document.getElementById('phone'), `${watch}<div class="screen"><div class="notch"></div><div class="sbar"><span>21:14</span><span>${r.online?'●●● 5G':'No signal'}</span></div>
+    <div class="pcontent">
+      ${r.online?'':'<div class="nosignal">No signal: requests can\'t reach you</div>'}
+      <div><div style="color:#93a0c4;font-size:12px">Good evening</div><div class="ptitle">${r.name}</div></div>
+      <div class="pcard toggle"><div><h6>Availability</h6><div>${r.status==='available'&&!r.engaged?'Available for requests':statusText(r)}</div></div><div class="sw ${r.status==='available'?'':'off'}"></div></div>
+      ${st?`<div class="pcard" data-spot="pstanding"><h6>Your standing</h6><div style="font-weight:700">${st.lvl}</div><div style="font-size:12px;color:#c7cfe6">${st.txt}</div></div>`:''}
+      ${quiet}
+      <div class="pcard plist"><h6>Recent requests</h6>${recent}</div>
+    </div>${overlay}${ptoast}</div>`);
+}
+function renderEngine(){
+  const tabs = [['ranking','Ranking'],['standing','Standing'],['timeline','Timeline'],['measures','Measures'],['switches','Switches'],['ops','Ops']];
+  let body='';
+  if (S.tab==='ranking'){
+    const c = S.lastCallout && S.lastCallout.state==='open' ? S.lastCallout : {area:S.preview.area, need:S.preview.need, id:'preview'};
+    const rows = rankFor(c, true).filter(x=>x.min<40 || x.r.area===c.area);
+    const best = Math.max(...rows.map(x=>x.acc));
+    body = `<div class="weights"><span class="wchip"><b>0.60</b> proximity</span><span class="wchip"><b>0.25</b> recent acceptance</span><span class="wchip"><b>0.15</b> capability</span><span class="wchip" style="color:var(--muted)">4.2 weights · unchanged (DR-18)</span></div>
+      <div class="note" style="margin:0 0 6px">Who would be asked first for ${c.id==='preview'?'a':'callout #'+c.id+','} ${c.area} callout${c.need.length?' needing '+c.need.join(', '):''}</div>
+      <table class="t"><tr><th>#</th><th>Responder</th><th>Travel</th><th>Proximity</th><th>History used</th><th>Capability</th><th>Total</th><th>History costs</th></tr>
+      ${rows.map((x,i)=>`<tr class="${i===0?'top':''}" data-spot="row-${x.r.id}"><td>${i+1}</td><td><b>${x.r.name}</b> <span class="note">${x.r.area}${x.r.status!=='available'||x.r.engaged?' · '+statusText(x.r):''}</span></td><td class="num">${x.min} min</td><td class="num">${(0.6*x.prox).toFixed(3)}</td><td class="num">${x.acc.toFixed(2)}${S.fixed&&on('floor')&&x.raw<FLOOR?` <span class="note">(raw ${x.raw.toFixed(2)} → floor)</span>`:''}</td><td class="num">${(0.15*x.cap).toFixed(2)}</td><td class="num"><b>${x.total.toFixed(3)}</b></td><td class="num">${((best-x.acc)*0.25/(0.6/45)).toFixed(1)} min</td></tr>`).join('')}</table>
+      <div class="note">"History costs" = how many minutes of travel this responder's record costs them against the best record here. Under 4.2 it can reach 19 minutes; with the floor it's capped at about 3.</div>`;
+  } else if (S.tab==='standing'){
+    const r = byId(S.phoneRid); const raw = rawScore(r), mid = middle(), used = histScore(r);
+    const inW = r.out.filter(o=>o.day > S.today - S.windowDays);
+    const cnt = t => inW.filter(o=>o.type===t && !(t==='yes'&&o.released)).length;
+    const pos = v => `${Math.max(0,Math.min(1,v))*100}%`;
+    body = S.fixed ? `<div class="cols"><div>
+        <div style="font-weight:700">${r.name} · ${dayLabel(S.today)}</div>
+        <div class="meter" data-spot="meter"><div class="mk" style="left:${pos(FLOOR)}"><span>floor 0.60</span></div><div class="mk" style="left:${pos(mid)}"><span>middle ${mid.toFixed(2)}</span></div>
+          <div class="dotm raw" style="left:${pos(raw)}" title="raw"></div><div class="dotm" style="left:${pos(used)}" title="used"></div></div>
+        <div class="kv"><span>Score (raw)</span><b class="num">${raw.toFixed(3)}</b></div>
+        <div class="kv"><span>Used for ranking ${on('floor')?'(with floor)':''}</span><b class="num">${used.toFixed(3)}</b></div>
+        <div class="kv" data-spot="toMiddle"><span>Accepts in a row to reach the middle</span><b class="num">${acceptsToMiddle(r,true)} with boost · ${acceptsToMiddle(r,false)} without</b></div>
+        <div class="kv"><span>Back to normal with no pings</span><b>${backToNormalDay(r)!==null?dayLabel(backToNormalDay(r)):'n/a'}</b></div>
+        <div class="kv" data-spot="windowSel"><span>Window (Helen's decision)</span><span>${[3,14,30].map(d=>`<button class="fchip ${S.windowDays===d?'on':''}" data-act="window" data-d="${d}">${d} days</button>`).join(' ')}</span></div>
+      </div><div>
+        <table class="t"><tr><th>In window</th><th>Count</th><th>Weight</th></tr>
+        <tr><td class="o-yes" style="color:var(--good)">Accepts</td><td class="num">${cnt('yes')}</td><td>+1 (×3 below middle)</td></tr>
+        <tr><td style="color:#b45309">Quick "no"</td><td class="num">${cnt('no')}</td><td>${on('cheapNo')?'0.5':'1.0'}</td></tr>
+        <tr><td style="color:var(--bad)">Delivered misses</td><td class="num">${cnt('miss')}</td><td>1.0</td></tr>
+        <tr><td style="color:var(--bad)">Releases after accepting</td><td class="num">${cnt('release')}</td><td>1.5 + accept removed</td></tr>
+        <tr><td style="color:var(--muted)">Not counted (out of area, late, undelivered, excused)</td><td class="num">${inW.filter(o=>!counted(o)).length}</td><td>0</td></tr></table>
+        <div class="note">Formula: (accept credits + 3.75) ÷ (accept credits + 0.5·no + 1·miss + 1.5·release + 5). Starts every responder as if 5 pings at 0.75.</div>
+      </div></div>`
+      : `<div class="cols"><div><div style="font-weight:700">${r.name} · 4.2 as shipped</div>
+        <div class="meter"><div class="dotm" style="left:${pos(r.old)}"></div></div>
+        <div class="kv"><span>Running score</span><b class="num">${r.old.toFixed(2)}</b></div>
+        <div class="kv"><span>Yes</span><b>+0.08</b></div><div class="kv"><span>No or miss (same)</span><b>−0.12</b></div><div class="kv"><span>Recovery over time</span><b class="no">none</b></div></div>
+        <div><div class="note">At Vesper's post-4.2 mix (30% taken) each ping moves her score by 0.3×0.08 − 0.7×0.12 = <b>−0.06</b>. She never climbs back.</div></div></div>`;
+  } else if (S.tab==='timeline'){
+    const c = S.lastCallout;
+    const rows = c ? c.pings.map(p=>`<tr data-spot="tl-${p.rid}"><td>${byId(p.rid).name}${p.role==='standby'?' <span class="note">stand-by</span>':''}</td><td class="num">${fmtT(p.sentAt-c.at)}</td><td class="num">${p.deliveredAt!=null?fmtT(p.deliveredAt-c.at):(p.attempt1Failed&&!p.retried?'failed':'—')}</td><td class="num">${p.answeredAt!=null?fmtT(p.answeredAt-c.at):'—'}</td><td>${p.held?'holding':p.outcome||'open'}</td><td class="num">${p.onSceneAt!=null?fmtT(p.onSceneAt-c.at):'—'}</td><td class="note">${p.note||''}</td></tr>`).join('') : '';
+    body = `<div class="cols"><div><div style="font-weight:700;margin-bottom:6px">${c?`Callout #${c.id} · ${c.area} · ${c.state}`:'No callout yet'}</div>
+      <table class="t" data-spot="pingtable"><tr><th>Responder</th><th>Sent</th><th>Delivered</th><th>Answered</th><th>Outcome</th><th>On scene</th><th></th></tr>${rows}</table>
+      <div class="note">DR-26: sent, delivered, answered and on-scene times are recorded for every ping.</div></div>
+      <div><div style="font-weight:700;margin-bottom:6px">Event log</div><div class="log">${S.log.map(l=>`<div><code>${fmtT(l.t)}</code><span>${l.text}</span></div>`).join('')}</div></div></div>`;
+  } else if (S.tab==='measures'){
+    const filled = S.callouts.filter(c=>c.state==='filled'), unf = S.callouts.filter(c=>c.state==='unfilled');
+    const ttf = filled.length? (filled.reduce((a,c)=>a+(c.filledAt-c.at),0)/filled.length):0;
+    body = `<div class="tiles">
+      <div class="tile"><div class="k">Callouts filled (headline)</div><div class="v">${filled.length}/${S.callouts.length}</div><div class="s">This session</div></div>
+      <div class="tile"><div class="k">Time to fill (headline)</div><div class="v">${fmtT(ttf)}</div><div class="s">Average, this session</div></div>
+      <div class="tile" data-spot="maxopen"><div class="k">Longest a ping stayed open</div><div class="v">${S.maxOpen.toFixed(0)} s</div><div class="s">Hard limit 60 s (DR-12)</div></div>
+      <div class="tile"><div class="k">Unfilled callouts</div><div class="v">${unf.length}</div><div class="s">Target ≤ 5.5% (was 11.1%)</div></div>
+      </div>
+      <table class="t" style="margin-top:12px" data-spot="targets"><tr><th>Guardrail (DR-27)</th><th>Before 4.2</th><th>Now</th><th>Target</th></tr>
+      <tr><td>Local share of pings: Old Town / Uptown / Harborside</td><td>76–83%</td><td class="no">11–20%</td><td>≥ 76%</td></tr>
+      <tr><td>Pings a week for the four quiet responders</td><td>11–14</td><td class="no">3–5</td><td>≥ 10</td></tr>
+      <tr><td>Callouts nobody took</td><td>5.5%</td><td class="no">11.1%</td><td>≤ 5.5%</td></tr>
+      <tr><td>Most a bad record costs in travel</td><td>~40 min</td><td>~19 min</td><td>~3 min</td></tr>
+      <tr><td>Load on The Gale / Nightwell / Stormwrack / Falkirk</td><td>10–15/wk</td><td class="no">14–19/wk</td><td>within 30% of usual</td></tr>
+      <tr><td>Acceptance rate (diagnostic only)</td><td>77%</td><td>72.7%</td><td>may dip as more people are asked</td></tr></table>`;
+  } else if (S.tab==='switches'){
+    body = `<div class="kv" style="margin-bottom:8px"><span><b>Master:</b> ${S.fixed?'With fixes':'4.2 as shipped'} <span class="note">· each rule has its own switch (DR-28)</span></span><button class="sbtn" data-act="master">${S.fixed?'Show 4.2 as shipped':'Turn fixes on'}</button></div>
+      <div class="swl" data-spot="switches">${SWITCHES.map(([k,id,label])=>`<div class="swi" data-spot="sw-${k}"><div class="sw ${S.sw[k]&&S.fixed?'':'off'}" data-act="sw" data-k="${k}"></div><div><b>${id}</b> ${label}<small>${k==='overlap'?'P2 · deferred until delivery data exists':k==='capFilter'?'Phase 2 · after tag clean-up':''}</small></div></div>`).join('')}</div>`;
+  } else if (S.tab==='ops'){
+    body = renderOps();
+  }
+  morph(document.getElementById('engine'), `<div class="tabs">${tabs.map(([k,l])=>`<button class="${S.tab===k?'on':''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>${body}`);
+}
+function renderOps(){
+  const v = S.ops;
+  if (v==='recompute'){
+    const rows = S.R.map(r=>{ const nw=rawScore(r); return `<tr data-spot="rc-${r.id}"><td><b>${r.name}</b> <span class="note">${r.handler}</span></td><td class="num ${r.old<0.1?'no':''}">${r.old.toFixed(2)}</td><td class="num">${S.opsData.recomputed?nw.toFixed(2):'…'}</td><td class="num">${S.opsData.recomputed?Math.max(FLOOR,nw).toFixed(2):'…'}</td></tr>`; }).join('');
+    return `<div class="cols"><div><table class="t"><tr><th>Responder</th><th>4.2 running score</th><th>Recomputed</th><th>Used (floor)</th></tr>${rows}</table></div>
+      <div><div style="font-weight:700">DR-08 · Recompute everyone at switch-on</div><div class="note">Every responder's history is rerun through the new rules. No hand-picked list, no amnesty. Ships in the same release as DR-01–DR-07 and DR-09, never before.</div>
+      ${S.opsData.recomputed?`<div class="banner good" data-spot="notice"><span>✉️</span><div><b>Advance notice sent</b> to Aunt Dot, Kip, Linda Pruitt, Desmond Okafor, and the handlers of the neighbours who'll see fewer pings (Marjorie Sung, Mr. Ambrose, Graham Petrov).</div></div>`:''}</div></div>`;
+  }
+  if (v==='deploy'){
+    const d = S.opsData;
+    return `<div class="cols"><div><div style="font-weight:700">DR-09 · Scores survive a deploy</div>
+      <table class="t" style="margin-top:8px"><tr><th>Responder</th><th>Before deploy</th><th>After deploy</th></tr>
+      ${S.R.slice(0,6).map(r=>`<tr><td>${r.name}</td><td class="num">${(d.before?.[r.id]??0).toFixed(2)}</td><td class="num ${d.after && d.after[r.id]!==d.before[r.id]?'no':''}">${d.after?d.after[r.id].toFixed(2):'—'}</td></tr>`).join('')}</table></div>
+      <div><div class="banner ${d.mode==='old'?'bad':'good'}" data-spot="deploynote"><div>${d.mode==='old'?'<b>4.2 today:</b> scores live in memory (<code>_scores = {}</code>). A restart quietly resets everyone to 0.50.':d.mode==='new'?'<b>With DR-09:</b> scores are stored. A deploy changes nothing. Only safe together with recovery (DR-02), or freeze-outs become permanent.':'Press play to deploy.'}</div></div></div></div>`;
+  }
+  if (v==='supply'){
+    const r = byId('mite');
+    return `<div class="cols"><div><div style="font-weight:700">Responder Availability Record · shared with Supply (read-only)</div>
+      <table class="t" style="margin-top:8px" data-spot="avrec"><tr><th>Field</th><th>Meteor Mite</th><th>Shared?</th></tr>
+      <tr><td>Availability windows</td><td>Evenings, weekends</td><td class="ok">Yes</td></tr><tr><td>Callout load (for maintenance timing)</td><td>3.8 / week</td><td class="ok">Yes</td></tr>
+      <tr data-spot="pauserow"><td>Paused (DR-10) / Unreachable (DR-11)</td><td>${r.status==='paused'?'Paused':'—'}</td><td class="no">No: Dispatch only</td></tr></table></div>
+      <div><div style="font-weight:700">DR-29 · Supply signs off first</div><div class="note">Supply books gear servicing into quiet windows using this record. A Dispatch pause must not look like a quiet week to Supply, so it stays Dispatch-only unless Supply signs off.</div>
+      <div class="banner ${S.opsData.signed?'good':'warn'}" data-spot="signoff"><div>${S.opsData.signed?'✓ Supply sign-off recorded for Release A.':'Awaiting Supply sign-off for Release A.'}</div></div></div></div>`;
+  }
+  if (v==='support'){
+    const done = S.opsData.replied||0;
+    return `<div class="cols"><div><div style="font-weight:700">DR-30 · Answer the people already affected</div>
+      <div class="tiles" style="margin-top:8px"><div class="tile" data-spot="tickets"><div class="k">Open ping tickets since 4.2</div><div class="v">${45-done}</div><div class="s">${done} answered with an interim reply</div></div>
+      <div class="tile"><div class="k">Ping tickets closed before today</div><div class="v">0</div><div class="s">of 45</div></div></div></div>
+      <div><div style="font-weight:700">Direct contact (no ticket needed)</div>
+      ${[['Aunt Dot','Vesper',0],['Kip','Meteor Mite',0],['Linda Pruitt','Farlight',14],['Desmond Okafor','The Undertow',19]].map(([h,r,t],i)=>`<div class="kv" data-spot="call-${i}"><span>${h} · ${r} <span class="note">${t} tickets filed</span></span><b class="${S.opsData.calls>i?'ok':''}">${S.opsData.calls>i?'✓ called':'to call'}</b></div>`).join('')}
+      <div class="note">Vesper's and Meteor Mite's handlers filed no tickets at all. Waiting for tickets would miss the worst hit.</div></div></div>`;
+  }
+  if (v==='intake'){
+    // All figures from the callouts table (29 Jun – 6 Sep). "Before" = 6.3 weeks to 11 Aug, "after" = 3.7 weeks from 12 Aug.
+    const wk=[141,139,138,144,137,138,110,121,124,127], lbl=['29 Jun','6 Jul','13 Jul','20 Jul','27 Jul','3 Aug','10 Aug','17 Aug','24 Aug','31 Aug'];
+    const days=[16,18,15,18,22,16,17,27,23,25,16,14,25,17,12,13,18,12,13,21,19,20];
+    const dlbl=['W','T','F','S','S','M','T','W','T','F','S','S','M','T','W','T','F','S','S','M','T','W'];
+    const ddate=['29','30','31','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19'];
+    const areas=[['Northfield',8.3,5.7],['Westbury',8.9,6.2],['Greenway',5.7,4.3],['Mill District',7.3,5.9],['Eastgate',18.7,15.4],['Foundry Row',7.0,5.9],['Midtown',12.1,10.3],['Hillcrest',9.4,8.1],['Harborside',10.0,8.6],['Kingsbridge',8.6,7.6],['Uptown',9.4,8.4],['Old Town',11.4,10.3],['Lakeshore',5.6,5.1],['Riverside',6.5,6.2],['Southport',10.8,10.8]];
+    const amax = 19;
+    return `<div class="intake">
+      <div class="ichart" data-spot="chart-weekly"><div class="ih">1 · Callouts coming in, per week</div>
+        <div class="chart">${wk.map((v,i)=>`<div class="${i>=6?'post':''}" style="height:${(v/150)*100}%"><span>${v}</span></div>`).join('')}</div>
+        <div class="chartx">${lbl.map(l=>`<span>${l}</span>`).join('')}</div>
+        <div class="note">About 139 a week before 4.2, about 119 after: <b>15% fewer</b>. Orange = 4.2 live.</div></div>
+      <div class="ichart" data-spot="chart-daily"><div class="ih">2 · Callouts per day, around release day</div>
+        <div class="chart daily">${days.map((v,i)=>`<div class="${i===7?'hl2':i===14?'hl':i>=14?'post':''}" style="height:${(v/30)*100}%"><span>${v}</span></div>`).join('')}</div>
+        <div class="chartx daily">${dlbl.map((l,i)=>`<span class="${i===14?'rel':''}">${l}<br>${ddate[i]}</span>`).join('')}</div>
+        <div class="note">29 Jul – 19 Aug. <b style="color:var(--good)">Wed 5 Aug: 27</b> · <b style="color:var(--bad)">Wed 12 Aug, release day: 12</b>. The drop starts that day.</div></div>
+      <div class="ichart wide" data-spot="chart-areas"><div class="ih">3 · Callouts per week, by area: before vs after 4.2</div>
+        <div class="alegend"><span><i style="background:var(--accent)"></i>Before 4.2</span><span><i style="background:var(--warn)"></i>After 4.2</span></div>
+        ${areas.map(([a,b,c])=>{ const ch=Math.round((c/b-1)*100); return `<div class="arow ${ch===0?'flat':''}"><span class="an">${a}</span><span class="ab"><i style="width:${b/amax*100}%;background:var(--accent)"></i><i style="width:${c/amax*100}%;background:var(--warn)"></i></span><span class="ac ${ch<0?'no':''}">${ch===0?'no change':ch+'%'}</span></div>`; }).join('')}
+        <div class="note"><b>14 of 15 areas went down</b>, only Southport held steady. Something that hits nearly every area at once points at the software, not at what's happening on the streets.</div></div>
+      <div class="ichart wide" data-spot="checklist"><div class="ih">DR-31 · What we'll find out</div><ul class="tight">
+        <li>Ask Marcus how callouts get into the system: typed in by handlers, sent from another system, or both.</li>
+        <li>If handlers type them in, check whether 4.2's saved filters are hiding areas they used to raise callouts for.</li>
+        <li>If 4.2 caused it, log a fix. Nobody has looked at this yet.</li></ul></div>
+    </div>`;
+  }
+  if (v==='roadmap'){
+    const items=[['Change to who gets pinged','4.2','Priya','Shipped · fix in Release A','Product, Dispatch'],['Availability Confidence','4.2','Priya','Not shipped, never announced → replaced by DR-24 standing','Product, Dispatch'],['Ping timeout tuning','4.2','Priya','Shipped (60 s) · kept','Product, Dispatch'],['Requisition approval chains','4.3','Priya','Committed · phasing TBD','Supply'],['Handler phone app','Q4','Priya','Exploring · handler alerts pulled forward (DR-23)','Sofia'],['Shared cover between responders','Q4','Priya','Exploring','Product, Dispatch']];
+    const after = S.opsData.cleaned;
+    return `<div><div style="font-weight:700">DR-32 · Q3 roadmap clean-up</div><table class="t" style="margin-top:8px" data-spot="roadmap"><tr><th>Item</th><th>Target</th><th>Owner</th><th>Status</th></tr>
+      ${items.map(i=>`<tr><td>${i[0]}</td><td>${i[1]}</td><td class="${after?'':'no'}">${after?i[4]:i[2]+' (left 21 Aug)'}</td><td>${after?i[3]:'Last reviewed 30 Jun'}</td></tr>`).join('')}</table></div>`;
+  }
+  if (v==='replay'){
+    const g = S.opsData.gate;
+    const rows=[['Old Town, Uptown, Harborside local share ≥ 76%','82%'],['The four each ≥ 10 pings / week','10.4–12.1'],['Unfilled callouts ≤ 5.5%','5.1%'],['No responder\'s load > 30% above usual','max +12%'],['Shadow run ≥ 1 week beside live ranking','8 days']];
+    return `<div class="cols"><div><div style="font-weight:700">DR-28 · Release gate: replay 29 Jun – 6 Sep pings</div>
+      <table class="t" style="margin-top:8px" data-spot="gate"><tr><th>Check</th><th>Replay result</th><th></th></tr>${rows.map((r,i)=>`<tr><td>${r[0]}</td><td class="num">${g>i?r[1]:'…'}</td><td>${g>i?'<span class="ok">PASS</span>':''}</td></tr>`).join('')}</table>
+      <div class="note">Illustrative results: the real replay is Wen's. The gate must pass before any switch is turned on.</div></div>
+      <div><div style="font-weight:700">Why replay + shadow + switches</div><div class="note">4.2 shipped with none of these. A replay assumes old behaviour; cheaper "no"s will change behaviour, so the new ranking also runs in shadow, and each rule can be turned off on its own (see Switches).</div></div></div>`;
+  }
+  return `<div class="note">Operational views appear here during the walkthrough.</div>`;
+}
+/* Spotlight: every item the narration calls out gets a box drawn around it,
+   the rest of the page is dimmed, and the item is scrolled into view. */
+function spotTab(spot){
+  if (!spot) return null;
+  if (spot.startsWith('row-')) return 'ranking';
+  if (['meter','toMiddle','windowSel'].includes(spot)) return 'standing';
+  if (spot.startsWith('tl-') || spot==='pingtable') return 'timeline';
+  if (['maxopen','targets'].includes(spot)) return 'measures';
+  if (spot==='switches' || spot.startsWith('sw-')) return 'switches';
+  if (spot.startsWith('rc-') || spot.startsWith('call-') || ['deploynote','avrec','pauserow','signoff','tickets','chart','chart-weekly','chart-daily','chart-areas','checklist','roadmap','gate','notice'].includes(spot)) return 'ops';
+  return null;
+}
+function findSpot(spot){
+  if (!spot) return null;
+  return document.querySelector(`[data-spot="${spot}"]`) || (spot.startsWith('#') ? document.querySelector(spot) : null);
+}
+let lastScrolled = null;
+function applySpot(){
+  const box = document.getElementById('spotbox');
+  let el = findSpot(S.spot);
+  // if the target isn't laid out at this screen size, box its nearest visible container instead
+  while (el && el.getBoundingClientRect().width === 0) el = el.parentElement;
+  if (!el){ box.classList.add('hidden'); return; }
+  if (S.spot !== lastScrolled){ lastScrolled = S.spot; el.scrollIntoView({block:'center', inline:'nearest', behavior:'smooth'}); }
+  const r = el.getBoundingClientRect(); const pad = 8;
+  if (r.width === 0 && r.height === 0){ box.classList.add('hidden'); return; }
+  box.style.left = (r.left - pad) + 'px'; box.style.top = (r.top - pad) + 'px';
+  box.style.width = (r.width + pad*2) + 'px'; box.style.height = (r.height + pad*2) + 'px';
+  box.classList.remove('hidden');
+}
+setInterval(applySpot, 60);
+addEventListener('scroll', applySpot, {passive:true}); addEventListener('resize', applySpot);
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+function phonePing(){ return S.pings.find(x=>x.rid===S.phoneRid && (!x.outcome) && x.deliveredAt); }
+function act(el){
+  const a = el.dataset.act;
+  if (a==='ans'){ answer(phonePing(), el.dataset.a); }
+  else if (a==='fpAccept'){ const p=phonePing(); pushLog('Fingerprint confirmed on the lock screen.'); answer(p,'yes'); }
+  else if (a==='unlock'){ if(!S.unlocking){ S.unlocking = S.now + 6; pushLog('Unlocking phone: Face ID, passcode, open the app…'); } }
+  else if (a==='undo'){ undoDecline(); }
+  else if (a==='release'){ releaseCallout(S.phoneRid); }
+  else if (a==='onscene'){ onScene(S.phoneRid); }
+  else if (a==='avail'){ const r=byId(el.dataset.rid); r.status='available'; r.streakMiss=0; r.streakNo=0; r.streakUnd=0; pushLog(`${r.name} confirmed available. Back in rotation.`); }
+  else if (a==='excuse'){ decideRelease(true, el.dataset.why); }
+  else if (a==='noexcuse'){ decideRelease(false); }
+  else if (a==='override'){ const sel=document.getElementById('ovSel'); override(+el.dataset.cid, sel.value); }
+  else if (a==='raise'){ raise(document.getElementById('raiseArea').value); }
+  else if (a==='filter'){ const fl = S.signedIn==='main'?S.filters.active:S.coverFilters; const t=el.dataset.tag; const i=fl.indexOf(t); i>=0?fl.splice(i,1):fl.push(t); }
+  else if (a==='clearFilters'){ if(S.signedIn==='main') S.filters.active=[]; else S.coverFilters=[]; pushLog('Filters cleared.'); }
+  else if (a==='restoreFilters'){ S.filters.active=S.filters.restoreFrom; S.filters.restoreFrom=null; pushLog('Filters restored.'); }
+  else if (a==='update'){ simulateUpdate(); }
+  else if (a==='switchUser'){ S.signedIn = S.signedIn==='main'?'cover':'main'; pushLog(`Signed in as ${S.signedIn==='main'?S.handler:'covering handler'}: own filters loaded.`); }
+  else if (a==='editTags'){ const r=byId(el.dataset.rid); const t=prompt(`Capability tags for ${r.name} (comma separated):`, r.tags.join(', ')); if(t!==null){ r.tags=t.split(',').map(s=>s.trim()).filter(Boolean); pushLog(`Handler updated ${r.name}'s tags (DR-20 phase 1).`);} }
+  else if (a==='free'){ const r=byId(el.dataset.rid); r.engaged=false; const c=S.callouts.find(x=>x.by===r.id&&x.state==='filled'); if(c) c.state='done'; }
+  else if (a==='tab'){ S.tab = el.dataset.tab; }
+  else if (a==='window'){ S.windowDays = +el.dataset.d; }
+  else if (a==='master'){ S.fixed = !S.fixed; pushLog(S.fixed?'Fixes turned on.':'Showing 4.2 as shipped.'); }
+  else if (a==='sw'){ if(S.fixed){ S.sw[el.dataset.k] = !S.sw[el.dataset.k]; } }
+  queueRender();
+}
+function simulateUpdate(){
+  const fl = S.filters.active.slice();
+  S.filters.active = [];
+  if (on('filterSafe') && fl.length){ S.filters.restoreFrom = fl; pushLog('Overnight update reset saved filters. Handler warned, one-tap restore.'); }
+  else pushLog('Overnight update reset saved filters silently.');
+}
+document.addEventListener('pointerdown', e=>{
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  if (el.tagName==='A') e.preventDefault();
+  if (el.tagName==='SELECT') return;
+  act(el);
+});
+
+/* ============================================================
+   WALKTHROUGH
+   ============================================================ */
+class Cancel extends Error{}
+function ctxFor(token, step){
+  const chk = ()=>{ if (token.cancel) throw new Cancel(); };
+  const x = {
+    // Each caption stays up long enough to read (~200 words/min + 1.5 s to find the highlight),
+    // or, in "Click to continue" mode, until the presenter moves on.
+    async say(text, spot=null, ms=null){
+      chk(); S.spot = spot; caption(step.id, text); queueRender();
+      if (PACE==='click'){ await x.waitContinue(); return; }
+      const words = text.trim().split(/\s+/).length;
+      await x.wait(Math.max(ms ?? 0, 1500 + words*300));
+    },
+    async waitContinue(){
+      // hold the simulated clock while the presenter talks, so nothing times out behind them
+      CONTINUE = false; HOLD = true; const t0 = Date.now();
+      document.getElementById('capNext').classList.remove('hidden');
+      try { while(!CONTINUE){ chk(); await new Promise(r=>setTimeout(r,80)); } }
+      finally {
+        const d = Date.now() - t0; if (S.undo) S.undo.until += d; if (S.phoneNote) S.phoneNote.until += d;
+        HOLD = false; lastT = performance.now();
+        document.getElementById('capNext').classList.add('hidden');
+      }
+    },
+    async wait(ms){ let end = Date.now()+ms; while(Date.now()<end){ chk(); if(PAUSED){ end += 120; await new Promise(r=>setTimeout(r,120)); continue; } await new Promise(r=>setTimeout(r,60)); } chk(); },
+    async until(pred, ms=60000){ let end=Date.now()+ms; while(!pred()){ chk(); if(PAUSED){ end += 120; await new Promise(r=>setTimeout(r,120)); continue; } if(Date.now()>end) return false; await new Promise(r=>setTimeout(r,60)); } return true; },
+    speed(n){ S.speed=n; queueRender(); },
+    reset(cfg){ freshWorld({...step.setup, ...cfg}); queueRender(); },
+    raise(area, opts){ return raise(area, opts); },
+    ping(rid){ return S.pings.slice().reverse().find(p=>p.rid===rid); },
+    async delivered(rid){ await x.until(()=>{ const p=x.ping(rid); return p && p.deliveredAt!=null; }); return x.ping(rid); },
+    async tap(spot, fn, pause=900){ S.spot = spot; queueRender(); await x.wait(pause); fn(); queueRender(); await x.wait(400); },
+    set(fn){ fn(S); queueRender(); },
+  };
+  return x;
+}
+let PACE = 'auto', CONTINUE = false;
+try{ PACE = localStorage.getItem('rook-pace') || 'auto'; }catch(e){}
+document.getElementById('capNext').onclick = ()=>{ CONTINUE = true; };
+addEventListener('keydown', e=>{
+  if (MODE!=='walk') return;
+  if ((e.key===' ' || e.key==='ArrowRight') && !document.getElementById('capNext').classList.contains('hidden') && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)){ e.preventDefault(); CONTINUE = true; }
+});
+function caption(id, text){ const c=document.getElementById('caption'); c.classList.remove('hidden'); document.getElementById('capId').textContent=id; document.getElementById('capText').textContent=text; }
+
+const STEPS = [
+{ id:'START', group:'Overview', title:'What 4.2 did to Old Town', pri:'',
+  problem:'Release 4.2 was meant to make sure the closest responder is asked first. In Old Town it did the opposite. Vesper lives there, but she now gets only 16% of her area\'s requests. Before 4.2 she got 83%.',
+  jtbd:'When something happens in my area, I want to be asked first, so the nearest person goes.',
+  solved:'This first scene shows how things work today. Each step after it turns on one fix and shows it working.',
+  criteria:['Left panel: the requirement. Centre: the handler\'s console. Right: the responder\'s phone. Bottom: the routing engine.'],
+  goals:[], whatif:[],
+  setup:{fixed:false, handler:'Aunt Dot', phone:'vesper', tab:'ranking'},
+  async script(x){
+    await x.say('This is 4.2 as shipped. Aunt Dot\'s console is on the left; Vesper\'s phone is on the right.', 'card-vesper');
+    await x.say('Vesper has had 4.6 requests a week since 4.2, down from 13.7. Dot can see she\'s "Available" but nothing explains the quiet.', 'card-vesper');
+    const c = x.raise('Old Town',{what:'A man in a suit of mirrors is climbing the television mast.'});
+    await x.say('A callout comes in two minutes from Vesper\'s door. Look at the ranking.', 'row-vesper', 3800);
+    await x.say('Her score is 0 after a few misses in August, so her record costs her 19 minutes of travel. She ranks last. Nightwell, 12 minutes away, is asked first.', 'row-nightwell', 6000);
+    x.speed(4); await x.until(()=>c.state!=='open', 30000); x.speed(1);
+    await x.say('Nightwell takes it. Vesper\'s phone never buzzed, and Dot was never told. This is the problem every step below fixes.', '#phone', 5000);
+  }},
+/* ---------- A. Scoring ---------- */
+{ id:'DR-01', group:'A · Scoring', title:'A "no" costs less than a miss', pri:'P0',
+  problem:'Today, ignoring a request costs a responder exactly the same as saying no. So there\'s no reason to say no. People let it run out, and every callout waits the full 60 seconds before moving on.',
+  jtbd:'When a callout comes in that I can\'t take, I want saying "no" to be clearly better than ignoring it, so I pass it on fast without losing my place.',
+  solved:'Saying no now costs half as much as ignoring. Responders who can\'t go have a reason to tap No straight away, and the callout moves to the next person in seconds.',
+  criteria:['Build fails unless release ≥ miss > no > 0','Miss weight no heavier than today','10 "no"s rank above 10 misses in the replay'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['Fake yes to avoid penalties → DR-07','Habitual decliner stays on top → DR-10','Raise the miss penalty instead → fails G1'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'standing'},
+  async script(x){
+    const c = x.raise('Old Town',{what:'A mime is holding a sit-in at the power station.'});
+    await x.delivered('vesper');
+    await x.say('Vesper is first in line again. Tonight she can\'t go.', 'alert', 3200);
+    await x.tap('decline', ()=>answer(x.ping('vesper'),'no'));
+    await x.say(`She declined in ${Math.round(x.ping('vesper').answeredAt-x.ping('vesper').sentAt)} seconds. The callout went straight to the next responder: no 60-second wait.`, 'tl-nightwell', 4500);
+    await x.say('A quick "no" counts half a point against her. Answering is always better than ignoring.', 'meter', 4500);
+    await x.wait(5200);
+    x.set(s=>{ byId('nightwell').engaged=true; });
+    const c2 = x.raise('Old Town',{what:'Three men in matching capes are removing the courthouse doors.'});
+    await x.delivered('vesper');
+    await x.say('Now compare: this time she ignores the ping.', 'alert', 3000);
+    x.speed(10); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
+    await x.say('A miss held the callout for the full 60 seconds and counts a full point. Ignoring now costs more than declining.', 'meter', 5500);
+  }},
+{ id:'DR-02', group:'A · Scoring', title:'Score is a rate over a time window', pri:'P0',
+  problem:'Today, a responder\'s score only changes when they get a request. Once their score drops, they get fewer requests, so it can never climb back. They stay stuck.',
+  jtbd:'When I\'ve had a bad stretch, I want it to stop counting after a while, so one bad week doesn\'t cost me a month of work.',
+  solved:'Old mistakes now expire after a set number of days, even if the responder gets no requests at all. Helen decides how many days: 3, 14 or 30.',
+  criteria:['No pings → back to 0.75 once old outcomes leave','Window is one config value','Count-based windows forbidden'],
+  goals:['G1 ✅','G2 ➖','C1 ✅'], whatif:['Count-based window never moves → forbidden','Formula switch shocks rankings → DR-08, DR-28'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'standing'},
+  async script(x){
+    await x.say('Because of her misses in August, Vesper\'s score is 0.43. A normal score is about 0.73.', 'meter', 4200);
+    await x.say('Watch what happens if she gets no pings at all, and time just passes (30-day window).', 'windowSel', 4000);
+    for (let i=0;i<30;i++){ x.set(s=>{ s.today++; }); await x.wait(160); }
+    await x.say(`By ${dayLabel(S.today)} every August miss has aged out and she's back to 0.75, normal. Under 4.2 she'd still be at zero.`, 'meter', 5500);
+    await x.say('The window length is a decision for Helen. Try 3, 14 and 30 days here.', 'windowSel', 4000);
+    x.set(s=>{ s.today=26; });
+  }},
+{ id:'DR-03', group:'A · Scoring', title:'Floor on the score', pri:'P0',
+  problem:'Today, a bad score can make a responder lose out to someone 19 minutes further away. That\'s how Vesper lost her own neighbourhood to responders from other areas.',
+  jtbd:'When my score is low, I want to still be asked for callouts right next to me, so a bad record never hands my area to someone further away.',
+  solved:'We set a minimum score. However bad someone\'s record, it can only cost them about 3 minutes of travel time. The closest person is asked first again.',
+  criteria:['No ranking input below the floor','Replay: local share ≥ 76% in Old Town, Uptown, Harborside'],
+  goals:['G1 ✅','G2 ➖ (✅ with DR-10)','C1 ✅'], whatif:['Floor keeps a chronic non-answerer on top → DR-10 streak check'],
+  setup:{fixed:false, handler:'Aunt Dot', phone:'vesper', tab:'ranking'},
+  async script(x){
+    await x.say('4.2 as shipped: Vesper ranks last for her own area. Her record costs her 19 minutes.', 'row-vesper', 5000);
+    x.set(s=>{ s.fixed=true; s.sw.floor=false; });
+    await x.say('With the new way of scoring, but no minimum score yet, her record still counts as about 7 extra minutes of travel.', 'row-vesper', 5000);
+    x.set(s=>{ s.sw.floor=true; });
+    await x.say('With a minimum score of 0.6, a bad record counts as no more than about 3 extra minutes. The closest responder is asked first, which is what 4.2 was meant to do.', 'row-vesper', 6000);
+  }},
+{ id:'DR-04', group:'A · Scoring', title:'Recovery boost', pri:'P0',
+  problem:'Even with old mistakes expiring, someone at the bottom would need about 20 accepted requests in a row, roughly 3 weeks, to get back to normal.',
+  jtbd:'When I\'ve been pushed to the bottom, I want my accepts to visibly count, so I can work my way back in about a week.',
+  solved:'While someone is below average, each request they accept counts three times. About 8 accepts, roughly one normal week, gets them back to normal.',
+  criteria:['Replay: each of the four reaches the middle in 7–8 accepts','Boost stops at the middle'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['Raise accept credit for everyone → weakens G2','Fake accepts to climb → DR-07','Climb then relapse → DR-10'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'standing'},
+  async script(x){
+    await x.say(`To get back to normal, Vesper needs ${acceptsToMiddle(byId('vesper'),true)} accepts in a row with the boost, or ${acceptsToMiddle(byId('vesper'),false)} without it.`, 'toMiddle', 5000);
+    let n=0;
+    while (rawScore(byId('vesper')) < middle() && n<15){
+      n++; x.set(()=>{ record(byId('vesper'),'yes'); pushLog(`Vesper accepted a callout (${n}).`); });
+      caption('DR-04', `Accept ${n}: score ${rawScore(byId('vesper')).toFixed(2)} → middle ${middle().toFixed(2)}`); S.spot='meter'; queueRender();
+      await x.wait(900);
+    }
+    await x.say(`Back to normal after ${n} accepts, about one normal week. Her phone and Dot's screen both show it.`, 'pstanding', 5500);
+  }},
+{ id:'DR-05', group:'A · Scoring', title:'No penalty for declining out-of-area callouts', pri:'P0',
+  problem:'Responders are sometimes asked to cover areas far from home. Saying no to those is sensible, but today it still lowers their score at home.',
+  jtbd:'When I\'m asked to cover a callout far from my area, I want to say no without it hurting me at home, so I stay first for callouts near me.',
+  solved:'Saying no to a request outside your own area no longer counts against you.',
+  criteria:['Score unchanged after an out-of-area decline','Out-of-area misses still count'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['Neighbours decline everything out of area → fewer such pings once locals are restored; unfilled rate is a guardrail'],
+  setup:{fixed:true, handler:'Marjorie Sung', phone:'nightwell', tab:'standing', prep:s=>{ s.R.find(r=>r.id==='vesper').engaged=true; }},
+  async script(x){
+    const before = rawScore(byId('nightwell'));
+    x.raise('Old Town',{what:'A former weather presenter has flooded the underpass.'});
+    await x.delivered('nightwell');
+    await x.say('Vesper is already on a job, so Nightwell (Midtown, 12 minutes away) is asked to cover Old Town.', 'alert', 4200);
+    await x.tap('decline', ()=>answer(x.ping('nightwell'),'no'));
+    await x.say('Her phone tells her straight away: outside your area, no effect on standing.', 'pnote', 4000);
+    await x.say(`Her score is still ${rawScore(byId('nightwell')).toFixed(3)} (was ${before.toFixed(3)}). She stays first for Midtown.`, 'meter', 5000);
+  }},
+{ id:'DR-06', group:'A · Scoring', title:'Only count misses the responder could have answered', pri:'P0',
+  problem:'The 60-second timer starts when we send the request, not when it reaches the phone. If the phone gets it late, the responder has less time, and is still blamed if they miss it.',
+  jtbd:'When my phone gets the ping late or not at all, I want that not to count against me, so I\'m not punished for the network.',
+  solved:'If a request reaches the phone too late to answer comfortably (less than 45 seconds left), missing it doesn\'t count against the responder.',
+  criteria:['Delivery time recorded for every ping','Late-delivered misses don\'t change the score','Wen confirms delivery receipts work, including older phones'],
+  goals:['G1 ✅','G2 ➖','C1 ✅'], whatif:['Switch off delivery to dodge penalties → DR-11 unreachable','Unreliable receipts → measure before switching on'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline', sw:{move15:false}, prep:s=>{ s.R.find(r=>r.id==='vesper').delay=24; }},
+  async script(x){
+    x.raise('Old Town',{what:'A woman on stilts is emptying a bank.'});
+    await x.say('The ping is sent, but the network holds it.', 'pingtable', 3500);
+    x.speed(4); await x.delivered('vesper'); x.speed(1);
+    await x.say('It reaches Vesper 24 seconds late. She has 36 seconds instead of 60.', 'ring', 4500);
+    x.speed(10); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
+    await x.say('It\'s recorded as a miss, but not counted: it arrived with under 45 seconds left.', 'tl-vesper', 5000);
+  }},
+{ id:'DR-07', group:'A · Scoring', title:'Release after accepting is the costliest outcome', pri:'P0',
+  problem:'Once saying no costs less, someone could tap Accept just to protect their score, then not turn up. Today nothing records that.',
+  jtbd:'As a handler, when my responder accepts a callout, I want to trust they\'re going, so the incident isn\'t left waiting on a fake yes.',
+  solved:'Accepting and then dropping out costs more than saying no. If there\'s a genuine reason, like gear breaking on the way, the handler can say so and there\'s no penalty. Responders also tap "I\'m on scene" when they arrive.',
+  criteria:['A release always scores worse than an honest "no"','Releases, arrivals and reasons stored','Released callout goes straight back out'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['Good-faith drop-out → excused','Handlers excuse everything → excuse rate visible to Support'],
+  setup:{fixed:true, handler:'Mr. Ambrose', phone:'vantage', tab:'standing'},
+  async script(x){
+    x.raise('Hillcrest',{what:'A chess grandmaster has frozen the fountain in the square.'});
+    await x.delivered('vantage');
+    await x.tap('accept', ()=>answer(x.ping('vantage'),'yes'));
+    await x.say('Captain Vantage accepts. On the way, his grapple line fails.', 'releaseBtn', 4200);
+    await x.tap('releaseBtn', ()=>releaseCallout('vantage'));
+    await x.say('The callout goes straight back out, and Mr. Ambrose is asked whether the release was excused.', 'modal', 4500);
+    await x.tap('modal', ()=>decideRelease(true,'Gear failed on the way'));
+    await x.say('Excused: no penalty. The accept doesn\'t count either, because he didn\'t do the job.', 'meter', 4500);
+    x.set(s=>{ byId('vantage').engaged=false; });
+    x.raise('Hillcrest',{what:'A clown is redirecting traffic on the ring road.'});
+    await x.delivered('vantage');
+    await x.tap('accept', ()=>answer(x.ping('vantage'),'yes'), 600);
+    await x.tap('releaseBtn', ()=>releaseCallout('vantage'), 900);
+    await x.tap('modal', ()=>decideRelease(false), 1200);
+    await x.say('No good reason: the accept no longer counts for him, and dropping out counts against him more than an honest "no" would. Faking a yes never pays.', 'meter', 6000);
+  }},
+{ id:'DR-08', group:'A · Scoring', title:'Recompute everyone at switch-on', pri:'P0',
+  problem:'If we reset the scores of the four quiet responders by hand, that\'s a special favour for a list of names. Under today\'s rules they would sink again within days anyway.',
+  jtbd:'When the scoring rules change, I want everyone judged by the same new rules from day one, so nobody is helped or hurt by being on a list.',
+  solved:'On launch day, we recalculate everyone\'s score with the new rules, so everyone is treated the same. We tell the affected handlers before we do it.',
+  criteria:['Every responder recomputed at switch-on','The four start at the floor or above','Advance notice sent'],
+  goals:['G1 ✅','G2 ➖','C1 ✅'], whatif:['Neighbours\' handlers see fewer pings → advance notice','Past misses can\'t be checked for late delivery → all counted; floor and boost cover it'],
+  setup:{fixed:false, handler:'Aunt Dot', phone:'vesper', tab:'ops', ops:'recompute'},
+  async script(x){
+    await x.say('Under 4.2, Vesper, Meteor Mite, Farlight and The Undertow all sit at 0.', 'rc-vesper', 4500);
+    x.set(s=>{ s.fixed=true; s.opsData.recomputed=true; });
+    await x.say('Launch day: everyone\'s score is recalculated with the new rules. The four quiet responders start at the minimum score, 0.60, instead of zero. Nobody is picked out by name.', 'rc-mite', 5500);
+    x.set(s=>{ s.messages.push({to:'Aunt Dot', from:'Rook Dispatch', text:'We\'ve corrected how missed requests are scored. Vesper\'s priority has been restored; you should see requests pick up this week.'}); });
+    await x.say('Dot hears it from us first, and so do the neighbours\' handlers who\'ll see fewer pings.', 'banner-msg', 5000);
+  }},
+{ id:'DR-09', group:'A · Scoring', title:'Store scores so they survive a deploy', pri:'P0',
+  problem:'Today, scores are only kept in the server\'s short-term memory. Every time the software is updated, everyone\'s score may quietly reset.',
+  jtbd:'As an engineer, when we deploy, I want scores to persist, so ranking doesn\'t change for reasons nobody can see.',
+  solved:'Scores are saved properly, so updates don\'t change them. This only goes live together with the "old mistakes expire" fix. Otherwise low scores would stay low forever.',
+  criteria:['Identical scores before and after a restart','Wen confirms where scores are kept today'],
+  goals:['Correctness'], whatif:['Persisting under today\'s rules makes freeze-outs permanent → only with DR-02'],
+  setup:{fixed:false, tab:'ops', ops:'deploy'},
+  async script(x){
+    x.set(s=>{ s.opsData={mode:'old', before:Object.fromEntries(s.R.map(r=>[r.id,r.old]))}; });
+    await x.say('4.2 today: here are the scores before a deploy.', 'deploynote', 3500);
+    x.set(s=>{ s.opsData.after=Object.fromEntries(s.R.map(r=>[r.id,0.5])); });
+    await x.say('After a restart, everyone is quietly back to 0.50. Nobody would know why rankings changed.', 'deploynote', 5000);
+    x.set(s=>{ s.fixed=true; const b=Object.fromEntries(s.R.map(r=>[r.id,rawScore(r)])); s.opsData={mode:'new', before:b, after:{...b}}; });
+    await x.say('With DR-09, scores are stored and a deploy changes nothing.', 'deploynote', 4500);
+  }},
+/* ---------- B. Availability ---------- */
+{ id:'DR-10', group:'B · Availability', title:'Streak check → confirm availability', pri:'P0',
+  problem:'With the new protections, someone who has genuinely stopped answering could stay near the top and keep holding up callouts in their area.',
+  jtbd:'As a handler, when my responder has stopped answering, I want to be told and have them paused until they confirm, so callouts aren\'t stalled and nobody is buried for weeks.',
+  solved:'After 3 missed requests in a row, the app asks the responder "Are you still available?" and tells their handler. Requests pause until they tap yes. Their score isn\'t lowered.',
+  criteria:['One tap clears it','Handler alert names the reason','Not written to Supply\'s record without sign-off'],
+  goals:['G1 ✅','G2 ✅','C1 ✅','C3 ✅'], whatif:['Paused while busy → one tap back','Supply reads a pause as a quiet week → Dispatch-only'],
+  setup:{fixed:true, handler:'Kip', phone:'mite', tab:'timeline', prep:s=>{ s.R.find(r=>r.id==='gale').engaged=true; }},
+  async script(x){
+    await x.say('Meteor Mite is first in line for Eastgate tonight, but her phone is in another room.', 'card-mite', 4200);
+    for (let i=1;i<=3;i++){
+      x.raise('Eastgate',{what:`Eastgate incident ${i}`});
+      x.speed(10); await x.delivered('mite'); await x.until(()=>x.ping('mite').outcome, 30000); x.speed(1);
+      caption('DR-10', `Missed ping ${i} of 3. The callout moves on to the next responder.`); await x.wait(1400);
+      x.set(s=>{ s.R.forEach(r=>{ if(r.id!=='gale') r.engaged=false; }); });
+    }
+    await x.say('Three delivered misses in a row. Instead of burying her, Dispatch pauses her and asks.', 'paused', 4500);
+    await x.say('Kip sees why on his console, with one tap to undo it.', 'banner-paused', 4200);
+    await x.tap('imavail', ()=>{ const r=byId('mite'); r.status='available'; r.streakMiss=0; pushLog('Meteor Mite confirmed available.'); }, 1200);
+    await x.say('She taps "I\'m available" and she\'s back in rotation. Nothing was held against her.', 'card-mite', 4500);
+  }},
+{ id:'DR-11', group:'B · Availability', title:'Undelivered pings move on early; repeated → unreachable', pri:'P0',
+  problem:'If a phone has no signal, the callout still waits the full 60 seconds for an answer that can never come.',
+  jtbd:'When a responder\'s phone can\'t be reached, I want the callout to move on quickly, so the incident doesn\'t wait on a dead phone.',
+  solved:'If the phone hasn\'t confirmed it got the request within 15 seconds, we move on to the next responder, with no penalty. After 2 in a row, we stop trying that phone until it reconnects, and tell the handler.',
+  criteria:['No ping waits more than 15 s without a receipt','A withdrawn ping never shows as live'],
+  goals:['G2 ✅ 15 s instead of 60','C1 ✅ shorter, never longer'], whatif:['Delivery switched off to dodge penalties → unreachable','Arrives at second 16 → "already covered"'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline', prep:s=>{ s.R.find(r=>r.id==='vesper').online=false; }},
+  async script(x){
+    x.raise('Old Town',{what:'A woman in a brass diving suit has stopped the ferry.'});
+    await x.say('Vesper\'s phone has no signal. The ping can\'t reach her.', '#phone', 3800);
+    x.speed(4); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
+    await x.say('After 15 seconds with no receipt, the callout moves on, 45 seconds sooner than today, and it\'s not held against her.', 'tl-vesper', 5500);
+    x.set(s=>{ s.R.forEach(r=>{ if(r.id!=='vesper') r.engaged=false; }); });
+    x.raise('Old Town',{what:'A second Old Town incident.'});
+    x.speed(4); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
+    await x.say('Two undelivered in a row: she\'s marked unreachable, so routing stops trying her, and Dot is told.', 'banner-unreach', 5000);
+    x.set(s=>{ const r=byId('vesper'); r.online=true; r.status='available'; r.streakUnd=0; pushLog('Vesper\'s app checked in: reachable again.'); s.phoneNote={text:'You missed a request while offline. It was already covered.', until:Date.now()+7000}; });
+    await x.say('Signal back: the app checks in, she\'s available again, and the late request shows as already covered, never as a live ping.', 'pnote', 6000);
+  }},
+/* ---------- C. Answering in 60 s ---------- */
+{ id:'DR-12', group:'C · Answering in 60 s', title:'Hard 60-second limit', pri:'P0',
+  problem:'Some earlier ideas would have given responders longer than 60 seconds to answer. That would slow every callout down.',
+  jtbd:'When a callout is live, I want every ping to close within 60 seconds of being sent, so hand-offs stay as fast as 4.2 made them.',
+  solved:'No request ever stays open longer than 60 seconds. Nothing in this plan changes that.',
+  criteria:['Automated check: no ping exceeds 60 s from send to close'],
+  goals:['G2 ✅','C1 ✅'], whatif:['Any feature that would extend the wait → rejected'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'measures'},
+  async script(x){
+    x.raise('Old Town',{what:'A pastry chef is releasing the animals at the zoo.'});
+    await x.delivered('vesper');
+    await x.say('Vesper doesn\'t answer this one.', 'ring', 3000);
+    x.speed(10); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
+    await x.say('The ping closed at exactly 60 seconds and moved on. That\'s the hard limit, and nothing in this design extends it.', 'maxopen', 5500);
+  }},
+{ id:'DR-13', group:'C · Answering in 60 s', title:'Answer from the lock screen without exposing anyone', pri:'P1',
+  problem:'Responders lose callouts while unlocking their phone. Today the lock screen also shows the full callout, so anyone nearby can see this person is a responder.',
+  jtbd:'When my phone buzzes and I\'m halfway into the suit, I want to answer without unlocking, so I don\'t lose a callout I wanted.',
+  solved:'Responders can accept straight from the lock screen with a fingerprint or face scan. The lock screen only says "New request", with no details and no company name.',
+  criteria:['A bystander can\'t accept or read details','Security Policy 4.1 signed off before build'],
+  goals:['G1 ✅','G2 ✅','C1 ✅','C2 ✅'], whatif:['Bystander reads the lock screen → generic text','Someone else taps decline → cheap "no" + DR-17 undo'],
+  setup:{fixed:false, handler:'Mr. Ambrose', phone:'vantage', locked:true, tab:'timeline'},
+  async script(x){
+    x.raise('Hillcrest',{what:'Two brothers in welding masks are climbing the TV mast.'});
+    await x.delivered('vantage');
+    await x.say('Today: the lock screen spells out the callout. Anyone at the kitchen counter can read it, and it ties this phone to a responder.', 'lock-notif', 6000);
+    await x.tap('unlock', ()=>act({dataset:{act:'unlock'}}));
+    await x.say('Then it\'s unlock, open the app, find the request. Coat on, one boot on, that\'s six seconds gone.', 'unlock', 4500);
+    await x.until(()=>!S.phoneLocked, 15000);
+    await x.tap('accept', ()=>answer(x.ping('vantage'),'yes'), 700);
+    x.reset({fixed:true, locked:true});
+    x.raise('Hillcrest',{what:'Two brothers in welding masks are climbing the TV mast.'});
+    await x.delivered('vantage');
+    await x.say('With the fix, the lock screen says only "New request". Nothing gives him away.', 'lock-notif', 5000);
+    await x.tap('fp', ()=>{ pushLog('Fingerprint confirmed on the lock screen.'); answer(x.ping('vantage'),'yes'); }, 1400);
+    await x.say('One fingerprint and he\'s accepted it, without unlocking. Ambrose\'s console shows him engaged straight away.', 'card-vantage', 5000);
+  }},
+{ id:'DR-14', group:'C · Answering in 60 s', title:'Hard-to-miss alert', pri:'P1',
+  problem:'If the phone is in another room or a coat pocket, the responder may not notice the request in time.',
+  jtbd:'When a callout comes in and I\'m not holding my phone, I want to notice it at once, so I have the full 60 seconds.',
+  solved:'The request fills the whole screen, can ring even when the phone is on silent (only if the responder switches that on), and buzzes their smartwatch.',
+  criteria:['Breaking silent mode is opt-in and can be scheduled','Watch content as generic as the lock screen'],
+  goals:['G1 ✅','G2 ✅','C1 ✅','C2 ✅'], whatif:['A loud alert in a covert situation → opt-in only, never default'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline', prep:s=>{ s.R.find(r=>r.id==='vesper').watch=true; }},
+  async script(x){
+    x.raise('Old Town',{what:'A ventriloquist has barricaded the public library.'});
+    await x.delivered('vesper');
+    await x.say('The whole screen takes over, and the sound breaks through silent mode (Vesper switched that on for evenings).', 'alert', 5000);
+    await x.say('Her watch buzzes too, with the same generic text, so she knows from the stairs.', 'watch', 4500);
+    await x.wait(1500);
+    await x.tap('accept', ()=>answer(x.ping('vesper'),'yes'));
+    await x.say(`She accepted with ${Math.round(60-(x.ping('vesper').answeredAt-x.ping('vesper').sentAt))} seconds to spare.`, '#phone', 3500);
+  }},
+{ id:'DR-15', group:'C · Answering in 60 s', title:'Countdown on the alert', pri:'P1',
+  problem:'Responders can\'t see how much time they have left to answer.',
+  jtbd:'When I see a ping, I want to know how long I have, so I either go for it or decline straight away.',
+  solved:'A countdown on screen shows the seconds left, so they can quickly decide to go for it or say no.',
+  criteria:['Countdown matches the server to within 2 s'],
+  goals:['G2 ✅','C1 ✅'], whatif:[],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline'},
+  async script(x){
+    x.raise('Old Town',{what:'A man carrying a very large magnet is redirecting traffic.'});
+    await x.delivered('vesper');
+    await x.say('The ring shows exactly how long she has. Green, then amber, then red.', 'ring', 5000);
+    await x.say('She can see she won\'t make it in time tonight, so she declines early instead of letting it run out.', 'decline', 4000);
+    await x.tap('decline', ()=>answer(x.ping('vesper'),'no'));
+    await x.say('Declined with plenty of time to spare. The next responder is asked immediately.', 'tl-nightwell', 4000);
+  }},
+{ id:'DR-16', group:'C · Answering in 60 s', title:'Reliable, fast delivery', pri:'P1',
+  problem:'Sometimes the request never reaches the phone, and nothing tries again. The responder is blamed for a request they never saw.',
+  jtbd:'When I\'m pinged, I want the ping to arrive at once, exactly once, so I have the full time to answer.',
+  solved:'If the first send fails, we automatically send it again. It still only shows once on the phone.',
+  criteria:['Delivery time and failure rate reported weekly','No duplicate pings shown','Wen confirms how 4.2\'s duplicate fix affects resends'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:[],
+  setup:{fixed:false, handler:'Mr. Ambrose', phone:'vantage', tab:'timeline', prep:s=>{ s.R.find(r=>r.id==='vantage').dropFirst=true; }},
+  async script(x){
+    x.raise('Hillcrest',{what:'A marching band has taken over the station announcements.'});
+    await x.say('4.2 as shipped: the first push to Captain Vantage\'s phone fails, and nothing resends it.', 'pingtable', 4500);
+    x.speed(10); await x.until(()=>x.ping('vantage') && x.ping('vantage').outcome, 30000); x.speed(1);
+    await x.say('His phone never buzzed, but he\'s charged a miss anyway.', 'tl-vantage', 4000);
+    x.reset({fixed:true, prep:s=>{ s.R.find(r=>r.id==='vantage').dropFirst=true; }});
+    x.raise('Hillcrest',{what:'A marching band has taken over the station announcements.'});
+    await x.say('With the fix: the first attempt fails, and it\'s retried at 3 seconds with the same ping ID.', 'pingtable', 4500);
+    await x.delivered('vantage');
+    await x.say('It arrives once, with 57 seconds left. No duplicate on his screen.', 'alert', 4000);
+    await x.tap('accept', ()=>answer(x.ping('vantage'),'yes'));
+  }},
+{ id:'DR-17', group:'C · Answering in 60 s', title:'Mis-tap protection: change a "no" to accept within 5 s', pri:'P1',
+  problem:'Responders sometimes tap No by accident and lose a callout they wanted.',
+  jtbd:'When I hit "no" by accident, I want to take it back straight away, so a slip doesn\'t cost me the callout.',
+  solved:'The No button is harder to hit by mistake. After tapping No, they have 5 seconds to change it to Yes. The callout still moves on straight away, so nobody is kept waiting.',
+  criteria:['A "no" never delays the hand-off','Undo only converts to accept; it can\'t erase a "no"'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['A "cancel decline" that erases "no"s → rejected','A 5-second hold on every "no" → rejected, slows hand-offs'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline'},
+  async script(x){
+    x.raise('Old Town',{what:'A woman riding a mechanical ostrich has taken over the bridge.'});
+    await x.delivered('vesper');
+    await x.say('Vesper means to accept, but her thumb slips.', 'decline', 3000);
+    await x.tap('decline', ()=>answer(x.ping('vesper'),'no'), 500);
+    await x.say('The callout went to Nightwell immediately: no delay for anyone. For 5 seconds Vesper can change her answer.', 'undo', 3000);
+    await x.tap('undo', ()=>undoDecline(), 700);
+    await x.say('She gets it back. Nightwell\'s ping is withdrawn and doesn\'t count against her.', 'tl-nightwell', 5000);
+  }},
+/* ---------- D. Routing ---------- */
+{ id:'DR-18', group:'D · Routing', title:'Keep 4.2\'s ranking weights', pri:'P0',
+  problem:'4.2 gave more weight to distance when choosing who to ask. That wasn\'t what caused the problems, and undoing it would bring back the original complaint.',
+  jtbd:'As a responder covering a wide area, when something happens near me, I want to be asked before someone far away, so the nearest person goes.',
+  solved:'We keep 4.2\'s balance between distance, past answers and skills exactly as it is.',
+  criteria:['No weight change in this release','Future weight changes need the DR-28 replay'],
+  goals:['G1 ✅'], whatif:['Revert to 0.45 / 0.40 → history could cost up to 40 minutes again'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'ranking'},
+  async script(x){
+    await x.say('This is how 4.2 balances distance, past answers and skills. It stays. With it, a responder 5 minutes away is always asked before one 40 minutes away.', 'row-vesper', 6000);
+    await x.say('What went wrong was scores dropping to zero, not this balance. With the minimum score, Vesper is first for Old Town again.', 'row-vesper', 6000);
+  }},
+{ id:'DR-19', group:'D · Routing', title:'Keep working down the list; escalate to the handler', pri:'P0',
+  problem:'Since 4.2, 40 callouts ended after only one responder was asked. Nobody else got the chance.',
+  jtbd:'When the first responder doesn\'t take a callout, I want it offered to the next, so the incident isn\'t left with nobody.',
+  solved:'If the first person doesn\'t take it, we keep asking the next closest, and the next. After 3 people say no, the handler is alerted and can choose someone directly.',
+  criteria:['No callout ends while an available responder hasn\'t been asked','Replay: unfilled ≤ 5.5%','Wen documents why callouts stop today'],
+  goals:['G1 ➖','G2 ✅','C1 ✅'], whatif:['Cycles through far responders → escalation','Far responders decline → DR-05','The stop is deliberate → confirm with Wen'],
+  setup:{fixed:false, handler:'Mr. Ambrose', phone:'vantage', tab:'timeline'},
+  async script(x){
+    x.raise('Hillcrest',{what:'A group calling itself the Lantern Society has taken the station.', stopAfterOne:true});
+    await x.delivered('vantage');
+    await x.tap('decline', ()=>answer(x.ping('vantage'),'no'));
+    await x.say('4.2 as shipped: Captain Vantage declines and the callout just ends. Nobody else was asked.', 'pingtable', 5000);
+    x.reset({fixed:true, prep:s=>{ ['nightwell','vesper','longcast','gale'].forEach(id=>{ const r=s.R.find(q=>q.id===id); r.bot={act:'no',after:6}; }); }});
+    x.raise('Hillcrest',{what:'A group calling itself the Lantern Society has taken the station.'});
+    await x.delivered('vantage');
+    await x.tap('decline', ()=>answer(x.ping('vantage'),'no'));
+    await x.say('With the fix, it keeps going: Nightwell, then Vesper…', 'pingtable', 4000);
+    x.speed(4); await x.until(()=>S.lastCallout.escalated, 40000); x.speed(1);
+    await x.say('After 3 pings with no yes, Mr. Ambrose is alerted and can assign someone directly.', 'banner-escalate', 5000);
+    await x.tap('banner-escalate', ()=>override(S.lastCallout.id,'bulwark'), 1200);
+    await x.say('He assigns Sgt. Bulwark. It\'s logged in the routing override audit log. Nothing is left unfilled while someone is available.', 'pingtable', 5000);
+  }},
+{ id:'DR-20', group:'D · Routing', title:'Nearest capable responder', pri:'P1 / P2',
+  problem:'Skills barely affect who gets asked. So the closest responder can be asked even if they don\'t have the skill the incident needs. Many skill records are also incomplete.',
+  jtbd:'When an incident needs a specific skill, I want the nearest responder who has it, so the person who arrives can actually help.',
+  solved:'First, handlers can update their responder\'s skills themselves. Once the records are complete, only responders with the needed skill are asked.',
+  criteria:['Handlers can edit tags','Mismatched assignments measured','Phase 2 only after tags are complete'],
+  goals:['G1 ✅ as originally meant'], whatif:['Hard filter on incomplete tags → creates gaps; phase order prevents it'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'ranking', preview:{area:'Old Town', need:['aquatic']}},
+  async script(x){
+    await x.say('This Old Town callout needs an aquatic responder. Vesper doesn\'t have the tag, but she\'s 2 minutes away and still ranks first.', 'row-vesper', 6000);
+    await x.say('Phase 1: handlers can fix tags themselves (Edit tags on each card), so the data gets complete.', 'card-vesper', 4500);
+    x.set(s=>{ s.sw.capFilter=true; });
+    await x.say('Phase 2: required tags become a filter. The Longcast, the nearest aquatic responder, is asked first.', 'row-longcast', 5500);
+  }},
+{ id:'DR-21', group:'D · Routing', title:'Overlapping offers (deferred)', pri:'P2',
+  problem:'If the first responder doesn\'t answer, the next one isn\'t asked until a full 60 seconds have passed.',
+  jtbd:'When the first responder isn\'t answering, I want the next one lined up, so the callout is covered sooner without taking it from the nearer person.',
+  solved:'At 45 seconds, the next responder is put on standby. The first still has until 60 seconds to say yes. If they don\'t, the standby gets it straight away. We\'ll build this later, once we have better data.',
+  criteria:['Built only once delivery/answer data shows the benefit','Stand-by never counts against the second responder','Not during bulk callouts'],
+  goals:['G1 ✅','G2 ✅','C1 ✅'], whatif:['"First yes wins" → fails G1, rejected','Second responder loses the race → no penalty','Reserved responder needed elsewhere → deferred'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline', sw:{overlap:true}, prep:s=>{ s.R.find(r=>r.id==='nightwell').bot={act:'yes',after:4}; }},
+  async script(x){
+    x.raise('Old Town',{what:'A retired lion tamer has taken over the bridge.'});
+    await x.delivered('vesper');
+    await x.say('Vesper is coming down the stairs.', 'ring', 3000);
+    x.speed(10); await x.until(()=>S.lastCallout.pings.some(p=>p.role==='standby'), 20000); x.speed(1);
+    await x.say('At 45 seconds, Nightwell is put on standby. Vesper is still first in line.', 'tl-nightwell', 4500);
+    await x.until(()=>S.lastCallout.pings.some(p=>p.held), 10000);
+    await x.say('Nightwell says yes: "You\'re next, confirming shortly."', 'tl-nightwell', 3500);
+    await x.tap('accept', ()=>answer(x.ping('vesper'),'yes'), 400);
+    await x.say('Vesper answers before her 60 seconds are up, so she gets it. Nightwell is told it\'s covered, and it doesn\'t count against her. We\'ll build this later, once we have better data.', 'pingtable', 6500);
+  }},
+{ id:'DR-22', group:'D · Routing', title:'Monitor load; no cap', pri:'P1',
+  problem:'When some responders went quiet, their neighbours picked up the extra work. The Gale went from 13 to almost 19 requests a week, and nobody noticed.',
+  jtbd:'As a handler of a busy responder, when their load jumps, I want it noticed, so it isn\'t left to me to spot burnout.',
+  solved:'The handler sees a warning when a responder gets 30% more requests than usual. We don\'t set a hard limit, because that would send callouts to people further away.',
+  criteria:['Weekly flag above +30%'],
+  goals:['G1 ✅ (a cap would fail it)'], whatif:['Cap the load → pushes callouts away from the nearest; rejected'],
+  setup:{fixed:false, handler:'Kip', phone:'mite', tab:'measures'},
+  async script(x){
+    await x.say('4.2 as shipped: Meteor Mite is dead quiet and The Gale is on fire. Two cards, no explanation.', 'card-gale', 5000);
+    x.set(s=>{ s.fixed=true; });
+    await x.say('With the fix, Kip gets a flag when a responder runs more than 30% above their usual, plus each one\'s standing in plain words.', 'flag-gale', 5500);
+    x.set(s=>{ byId('gale').week=14.2; byId('mite').week=10.6; });
+    await x.say('Once scores are recalculated, Eastgate\'s callouts are shared by distance again: The Gale back near normal, Meteor Mite back to about 10 a week.', 'card-mite', 5500);
+  }},
+/* ---------- E. Handlers & responders ---------- */
+{ id:'DR-23', group:'E · Handlers & responders', title:'Tell the handler when their responder is pinged', pri:'P1',
+  problem:'Handlers don\'t know when their responder is being asked to take a callout. Aunt Dot listens for a buzz through the ceiling.',
+  jtbd:'When a callout goes to my responder, I want to know at the same moment, so I can get them to the phone in time.',
+  solved:'The handler\'s screen shows an alert, with that responder\'s own sound, the moment their responder is asked. The handler can\'t answer for them. It just helps them get the responder to the phone.',
+  criteria:['Within 2 s of the ping','Handler can\'t accept on the responder\'s behalf'],
+  goals:['G1 ✅','G2 ✅','C1 ✅','C2 ✅'], whatif:['Alert fatigue → per-responder sounds, mute','Handler accepts for an unready responder → no accept button'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', locked:true, tab:'timeline'},
+  async script(x){
+    x.raise('Old Town',{what:'A woman who speaks only in rhyme is holding a sit-in.'});
+    await x.delivered('vesper');
+    await x.say('The moment the ping goes out, Dot\'s console chimes, with Vesper\'s own sound and the time left. No accept button: Vesper still answers.', 'toast', 6000);
+    await x.say('Dot shouts up the stairs. Vesper answers from the lock screen.', 'lock-notif', 3500);
+    await x.tap('fp', ()=>{ pushLog('Fingerprint confirmed on the lock screen.'); answer(x.ping('vesper'),'yes'); }, 900);
+    await x.say('Taken, with time to spare. Dot didn\'t have to hear a buzz through the ceiling.', 'card-vesper', 4000);
+  }},
+{ id:'DR-24', group:'E · Handlers & responders', title:'Standing in plain words', pri:'P1',
+  problem:'When a responder goes quiet, nobody can see why. Handlers check everything is set to "available". Responders wonder if they\'ve been dropped.',
+  jtbd:'When my responder (or I) has gone quiet, I want to see why and when it ends, so I know nothing is broken and what gets them back.',
+  solved:'The responder and their handler see a plain message: why they\'re getting fewer requests, and what gets them back to normal. Nobody else can see it.',
+  criteria:['Only the responder and their handler see it','Updates within an hour','Never shows other responders'],
+  goals:['Trust ✅','C2 ✅'], whatif:['A number becomes a target → words, not numbers; DR-07','Seeing others\' standing → own responder only'],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'standing'},
+  async script(x){
+    await x.say('On Vesper\'s phone: why she\'s lower, and exactly what gets her back.', 'pstanding', 5000);
+    await x.say('Dot sees the same words on Vesper\'s card. No scores, nothing about anyone else.', 'standing-vesper', 5000);
+    await x.say('This is what Availability Confidence promised in 4.2 and never shipped.', 'standing-vesper', 4000);
+  }},
+{ id:'DR-25', group:'E · Handlers & responders', title:'Finish filter persistence safely', pri:'P0 / P1',
+  problem:'Saved filters on the handler\'s screen can reset after an update without warning, can show someone else\'s settings on a shared computer, and can hide a callout for the handler\'s own responder.',
+  jtbd:'When I open the console, I want my own filters and to know they\'re not hiding anything about my responder, so I can trust what I see.',
+  solved:'Handlers are told if their filters reset and can restore them in one click. A filter can never hide their own responder\'s callouts. Everyone who signs in gets their own filters.',
+  criteria:['No filter hides the handler\'s own responder','No silent resets','Two people sharing a computer see their own filters'],
+  goals:['G3 ✅'], whatif:['Per-user filters on a shared sign-in → separate sign-ins first','Constant warnings → fix the cause'],
+  setup:{fixed:false, handler:'Mr. Ambrose', phone:'vantage', tab:'timeline', filters:['structural-entry','flight']},
+  async script(x){
+    await x.say('Ambrose filters on structural-entry and flight, the Captain\'s tags.', 'filters', 4000);
+    x.set(()=>simulateUpdate());
+    await x.say('4.2 as shipped: an overnight update wipes them silently. He\'d be looking at the wrong view without knowing.', 'filters', 5000);
+    x.reset({fixed:true, filters:['structural-entry','flight']});
+    x.set(()=>simulateUpdate());
+    await x.say('With the fix: he\'s told, with one-tap restore.', 'banner-filter', 4000);
+    await x.tap('banner-filter', ()=>{ S.filters.active=S.filters.restoreFrom; S.filters.restoreFrom=null; }, 900);
+    x.raise('Hillcrest',{need:['aquatic'], what:'Flooding under the Hillcrest viaduct.'});
+    await x.say('A callout needing "aquatic" doesn\'t match his filter, but it involves the Captain, so it\'s pinned and shown anyway.', 'inc-'+S.lastCallout.id, 5500);
+    await x.tap('signin', ()=>{ S.signedIn='cover'; pushLog('Covering handler signed in: own filters loaded.'); }, 600);
+    await x.say('A covering handler signs in on the same computer and gets their own filters, not his.', 'filters', 4500);
+  }},
+/* ---------- F. Measurement & safety ---------- */
+{ id:'DR-26', group:'F · Measurement & safety', title:'Record what happens to each ping', pri:'P0',
+  problem:'Today we only record when a request was sent and the final answer. We can\'t tell when it reached the phone, how long the responder took, or when they arrived.',
+  jtbd:'As a data analyst, when we change routing, I want delivery, answer and arrival times, so I can prove whether it worked.',
+  solved:'We record every step: sent, reached the phone, answered, and arrived on scene.',
+  criteria:['Populated for ≥ 99% of pings','Ravi can report DR-27 weekly'],
+  goals:['Measures G1 and G2'], whatif:[],
+  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline'},
+  async script(x){
+    x.raise('Old Town',{what:'An accountant with a jet pack is painting the town hall green.'});
+    await x.delivered('vesper');
+    await x.tap('accept', ()=>answer(x.ping('vesper'),'yes'), 1800);
+    await x.wait(800);
+    await x.tap('onscene', ()=>onScene('vesper'), 900);
+    await x.say('Sent, delivered, answered, on scene: every ping now records all of them.', 'pingtable', 5000);
+  }},
+{ id:'DR-27', group:'F · Measurement & safety', title:'New headline measures and guardrails', pri:'P0',
+  problem:'The number we watch most, the share of requests accepted, went back up while four responders were being frozen out. It hid the problem. The fixes may even make it dip.',
+  jtbd:'As the Director, when I read the weekly numbers, I want them to show whether callouts are covered fast and fairly, so a good number can\'t hide harm.',
+  solved:'We watch two main numbers instead: how many callouts got someone, and how fast. Plus warning signs: is the closest person being asked, is anyone overloaded, is anyone left out.',
+  criteria:['Definitions agreed with Ravi','Each guardrail has an alert threshold','Helen signs off'],
+  goals:['G1 ✅','G2 ✅'], whatif:['Acceptance rate falls as things improve → not the headline'],
+  setup:{fixed:true, tab:'measures'},
+  async script(x){
+    await x.say('The headline becomes: did callouts get covered, and how fast.', 'targets', 4500);
+    await x.say('Acceptance rate stays as a diagnostic. It will dip as more people are asked per callout, and that\'s expected.', 'targets', 5000);
+  }},
+{ id:'DR-28', group:'F · Measurement & safety', title:'Replay, shadow run, per-rule switches', pri:'P0',
+  problem:'4.2 went live without being tested on real past data, without a safe trial, and with no way to switch off just one part of it.',
+  jtbd:'As an engineering manager, when routing rules change, I want to test them on real history and turn each off on its own, so we never repeat 4.2.',
+  solved:'Before launch, we run the last few months of real requests through the new rules and check the results. Then we run the new rules quietly next to the old ones for a week. Every rule has its own on/off switch.',
+  criteria:['Gate: local share ≥ 76%, the four ≥ 10/week, unfilled ≤ 5.5%, no load > +30%'],
+  goals:['Protects G1, G2'], whatif:['Replay can\'t predict new behaviour → shadow + switches + 2 weeks of guardrails'],
+  setup:{fixed:true, tab:'switches'},
+  async script(x){
+    await x.say('Every rule in this release has its own switch. Try them in free play.', 'switches', 4500);
+    x.set(s=>{ s.tab='ops'; s.ops='replay'; s.opsData.gate=0; });
+    for (let i=1;i<=5;i++){ x.set(s=>{ s.opsData.gate=i; }); await x.wait(700); }
+    await x.say('Nothing goes live until these checks pass on real past data. (The results shown are examples; Wen will run the real test.)', 'gate', 5500);
+  }},
+{ id:'DR-29', group:'F · Measurement & safety', title:'Supply sign-off on availability changes', pri:'P0',
+  problem:'The gear team (Rook Supply) uses Dispatch\'s availability information to plan maintenance. A Dispatch change can upset their planning without them knowing.',
+  jtbd:'As a Supply lead, when Dispatch changes how availability works, I want to know first, so maintenance isn\'t booked into busy windows.',
+  solved:'The gear team approves any change to availability before it goes live. The new "paused" and "can\'t reach phone" statuses stay inside Dispatch.',
+  criteria:['Written sign-off from Supply'],
+  goals:['C3 ✅'], whatif:[],
+  setup:{fixed:true, tab:'ops', ops:'supply', phone:'mite', handler:'Kip'},
+  async script(x){
+    await x.say('Supply reads this record to time maintenance. A Dispatch pause must not look like a quiet week.', 'avrec', 5000);
+    await x.say('So pause and unreachable stay inside Dispatch.', 'pauserow', 3500);
+    x.set(s=>{ s.opsData.signed=true; });
+    await x.say('Supply signs off before Release A ships.', 'signoff', 3500);
+  }},
+/* ---------- G. Operations ---------- */
+{ id:'DR-30', group:'G · Operations', title:'Answer the people already affected', pri:'P0 · this week',
+  problem:'45 support tickets about missing requests have come in since 4.2, and none has been answered. The handlers of the worst-hit responders haven\'t filed tickets at all.',
+  jtbd:'As a handler whose responder went quiet, I want an honest explanation, so I stop wondering whether they\'ve been dropped.',
+  solved:'This week: reply to all 45 tickets explaining what happened and that a fix is coming. Phone the handlers of the four responders who went quiet. Before launch, warn the handlers whose responders will start getting fewer requests.',
+  criteria:['Every open ping ticket has a reply','All four handlers contacted'],
+  goals:['Trust ✅'], whatif:[],
+  setup:{fixed:true, tab:'ops', ops:'support', handler:'Aunt Dot'},
+  async script(x){
+    await x.say('45 open ping tickets, none closed.', 'tickets', 3500);
+    for (let i=5;i<=45;i+=10){ x.set(s=>{ s.opsData.replied=i; }); await x.wait(300); }
+    x.set(s=>{ s.opsData.replied=45; });
+    for (let i=1;i<=4;i++){ x.set(s=>{ s.opsData.calls=i; }); await x.wait(500); }
+    x.set(s=>{ s.messages.push({to:'Aunt Dot', from:'Rook Support', text:'We found why Vesper has had so few requests since 12 August. It wasn\'t anything you or she did, and a fix is coming. We\'ll call you this week.'}); });
+    await x.say('Every ticket answered, all four handlers called, including Dot and Kip, who never filed one.', 'banner-msg', 6000);
+  }},
+{ id:'DR-31', group:'G · Operations', title:'Find out why fewer callouts come in', pri:'P1',
+  problem:'Since the day 4.2 launched, about 15% fewer callouts have been coming in, in almost every area. Nobody has looked into why.',
+  jtbd:'As a PM, when demand drops on release day, I want to know whether we caused it, so we don\'t miss a second 4.2 side effect.',
+  solved:'Find out how callouts get into the system, and whether something in 4.2 is stopping some of them.',
+  criteria:['A written answer, and a fix logged if 4.2 caused it'],
+  goals:['Investigation'], whatif:[],
+  setup:{fixed:true, tab:'ops', ops:'intake'},
+  async script(x){
+    await x.say('Week by week: about 139 callouts came in each week before 4.2. Since then it\'s about 119. That\'s 15% fewer.', 'chart-weekly');
+    await x.say('Day by day: the Wednesday before release had 27 callouts. Release day, Wednesday 12 August, had 12. The drop starts that very day.', 'chart-daily');
+    await x.say('Area by area: 14 of the 15 areas went down at the same time. Only Southport held steady.', 'chart-areas');
+    await x.say('A drop that starts on release day, in almost every area at once, points at the software, not the streets. A quiet August wouldn\'t switch on overnight.', 'chart-areas');
+    await x.say('So we find out how callouts get into the system, and whether something in 4.2 is stopping some of them.', 'checklist');
+  }},
+{ id:'DR-32', group:'G · Operations', title:'Roadmap clean-up', pri:'P1',
+  problem:'Every item on the roadmap is still owned by Priya, who left in August. One promised feature was quietly dropped.',
+  jtbd:'As the Director, I want the roadmap to say who owns what and what\'s still committed, so commitments are real.',
+  solved:'Give every item a real owner, write down what happened to the dropped feature, and agree with Helen what\'s still promised this quarter.',
+  criteria:['Roadmap updated and reviewed with Helen'],
+  goals:['Process'], whatif:[],
+  setup:{fixed:true, tab:'ops', ops:'roadmap'},
+  async script(x){
+    await x.say('Today: every item owned by someone who left on 21 August.', 'roadmap', 4000);
+    x.set(s=>{ s.opsData.cleaned=true; });
+    await x.say('After: real owners, and Availability Confidence honestly marked as replaced.', 'roadmap', 4500);
+  }},
+{ id:'END', group:'Summary', title:'What changes, in one view', pri:'',
+  problem:'4.2 had the right goals. But the way scores were kept turned a few slow answers into weeks without work.',
+  jtbd:'Nearest first, fast hand-offs, saved filters: all kept.',
+  solved:'Two launches. First: fair scores, and no callout left without someone being asked. Second: help responders answer in time, and show handlers what\'s going on. Two items come later.',
+  criteria:['Switch to Free play to try any of it yourself'],
+  goals:['G1 ✅','G2 ✅','G3 ✅','C1 ✅','C2 ✅','C3 ✅'], whatif:[],
+  setup:{fixed:true, tab:'measures'},
+  async script(x){ await x.say('That\'s every requirement. Switch to Free play to raise callouts, answer on the phone and toggle any rule.', 'targets', 6000); }},
+];
+
+function renderWalk(){
+  const w = document.getElementById('walk');
+  if (MODE==='free'){
+    w.innerHTML = `<div class="grp">Free play</div><h2>Try it yourself</h2>
+      <p class="note">Raise callouts from the console, answer on the phone, and flip any rule in the Switches tab. Other responders answer on their own.</p>
+      <div class="free">
+        <label>Rules</label><div class="seg" style="width:100%"><button class="${!S.fixed?'on':''}" data-free="old" style="flex:1">4.2 as shipped</button><button class="${S.fixed?'on':''}" data-free="new" style="flex:1">With fixes</button></div>
+        <label>Handler at the console</label><select id="fHandler">${HANDLERS.map(h=>`<option ${S.handler===h?'selected':''}>${h}</option>`).join('')}</select>
+        <label>Phone belongs to</label><select id="fPhone">${S.R.map(r=>`<option value="${r.id}" ${S.phoneRid===r.id?'selected':''}>${r.name}</option>`).join('')}</select>
+        <label>Raise a callout</label><div style="display:flex;gap:6px"><select id="fArea">${AREAS.map(a=>`<option>${a}</option>`).join('')}</select><select id="fNeed"><option value="">any skill</option>${TAGS.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <button class="btn primary" style="width:100%;margin-top:8px" id="fRaise">Raise callout</button>
+        <label>Phone</label>
+        <div style="display:flex;gap:6px"><button class="btn" style="flex:1" id="fLock">${S.phoneLocked?'Unlock screen':'Lock screen'}</button><button class="btn" style="flex:1" id="fSignal">${byId(S.phoneRid).online?'Lose signal':'Restore signal'}</button></div>
+        <button class="btn" style="width:100%;margin-top:8px" id="fReset">Reset world</button>
+      </div>`;
+    w.querySelector('[data-free="old"]').onclick=()=>{S.fixed=false;renderWalk();queueRender();};
+    w.querySelector('[data-free="new"]').onclick=()=>{S.fixed=true;renderWalk();queueRender();};
+    w.querySelector('#fHandler').onchange=e=>{S.handler=e.target.value;queueRender();};
+    w.querySelector('#fPhone').onchange=e=>{S.phoneRid=e.target.value;renderWalk();queueRender();};
+    w.querySelector('#fRaise').onclick=()=>{const n=w.querySelector('#fNeed').value; raise(w.querySelector('#fArea').value,{need:n?[n]:[]}); };
+    w.querySelector('#fLock').onclick=()=>{S.phoneLocked=!S.phoneLocked;renderWalk();queueRender();};
+    w.querySelector('#fSignal').onclick=()=>{const r=byId(S.phoneRid); r.online=!r.online; if(r.online&&r.status==='unreachable'){r.status='available';r.streakUnd=0;pushLog(`${r.name}'s app checked in.`);} renderWalk();queueRender();};
+    w.querySelector('#fReset').onclick=()=>{freshWorld({fixed:S.fixed,handler:S.handler,phone:S.phoneRid});renderWalk();queueRender();};
+    return;
+  }
+  const s = STEPS[STEP];
+  const groups = [...new Set(STEPS.map(x=>x.group))];
+  w.innerHTML = `
+    <div class="grp">Walkthrough · ${STEP+1} of ${STEPS.length}</div>
+    <div class="progress"><i style="width:${(STEP+1)/STEPS.length*100}%"></i></div>
+    <select class="stepsel" id="stepSel">${groups.map(g=>`<optgroup label="${g}">${STEPS.map((x,i)=>x.group===g?`<option value="${i}" ${i===STEP?'selected':''}>${x.id} · ${x.title}</option>`:'').join('')}</optgroup>`).join('')}</select>
+    <h2><span class="rid">${s.id}</span>${s.title}</h2>
+    <div>${s.pri?`<span class="pri">${s.pri}</span>`:''} <span class="grp" style="margin-left:4px">${s.group}</span></div>
+    <div class="blk"><h4>Problem</h4><p>${s.problem}</p></div>
+    <div class="blk"><h4>Job to be done</h4><p class="jtbd">${s.jtbd}</p></div>
+    <div class="blk"><h4>How it's solved</h4><p>${s.solved}</p></div>
+    ${s.goals.length?`<div class="blk"><h4>Goal check</h4><div class="chips">${s.goals.map(g=>`<span class="chip ${g.includes('✅')?'g':g.includes('➖')?'':'w'}">${g}</span>`).join('')}</div></div>`:''}
+    ${s.criteria.length?`<details ${STEP===0?'open':''}><summary>Acceptance criteria</summary><ul class="tight">${s.criteria.map(c=>`<li>${c}</li>`).join('')}</ul></details>`:''}
+    ${s.whatif.length?`<details><summary>What-if checks</summary><ul class="tight">${s.whatif.map(c=>`<li>${c}</li>`).join('')}</ul></details>`:''}
+    <div class="ctrl"><button class="btn" id="prevBtn" ${STEP===0?'disabled':''}>◀</button><button class="btn primary" id="playBtn">${RUN&&!RUN.done?(PAUSED?'▶ Resume':'❚❚ Pause'):'▶ Simulate'}</button><button class="btn" id="replayBtn" title="Restart this step">↺</button><button class="btn" id="nextBtn" ${STEP===STEPS.length-1?'disabled':''}>Next ▶</button></div>
+    <div class="pace">Pace <div class="seg"><button data-pace="auto" class="${PACE==='auto'?'on':''}">Auto</button><button data-pace="click" class="${PACE==='click'?'on':''}">Click to continue</button></div></div>`;
+  w.querySelectorAll('[data-pace]').forEach(b=>b.onclick=()=>{ PACE=b.dataset.pace; try{localStorage.setItem('rook-pace',PACE);}catch(e){} if(PACE==='auto') CONTINUE=true; renderWalk(); });
+  w.querySelector('#stepSel').onchange = e=> goStep(+e.target.value);
+  w.querySelector('#prevBtn').onclick = ()=> goStep(STEP-1);
+  w.querySelector('#nextBtn').onclick = ()=> goStep(STEP+1, true);
+  w.querySelector('#replayBtn').onclick = ()=> goStep(STEP, true);
+  w.querySelector('#playBtn').onclick = ()=>{
+    if (RUN && !RUN.done){ setPaused(!PAUSED); return; }
+    play();
+  };
+}
+function goStep(i, autoplay=false){
+  if (i<0||i>=STEPS.length) return;
+  if (RUN) RUN.cancel = true; RUN=null;
+  setPaused(false); lastScrolled = null;
+  STEP = i; const s = STEPS[i];
+  freshWorld(s.setup); S.spot=null;
+  document.getElementById('caption').classList.add('hidden');
+  renderWalk(); queueRender();
+  try{ history.replaceState(null,'','#'+s.id); }catch(e){}
+  if (autoplay) setTimeout(play, 350);
+}
+async function play(){
+  const s = STEPS[STEP];
+  if (RUN) RUN.cancel = true;
+  setPaused(false); lastScrolled = null;
+  freshWorld(s.setup);
+  const token = {cancel:false, paused:false, done:false}; RUN = token; renderWalk();
+  try{
+    await s.script(ctxFor(token, s));
+    if (!token.cancel){ token.done=true; S.spot=null; caption(s.id, STEP<STEPS.length-1 ? `Done. Next: ${STEPS[STEP+1].id} · ${STEPS[STEP+1].title} ▶` : 'End of walkthrough.'); }
+  }catch(e){ if (!(e instanceof Cancel)) { console.error(e); caption(s.id,'Something went wrong in this simulation: '+e.message); } }
+  S.speed=1; renderWalk(); queueRender();
+}
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{
+  MODE=b.dataset.mode; document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b));
+  if (RUN) RUN.cancel=true; RUN=null; setPaused(false); document.getElementById('caption').classList.add('hidden');
+  if (MODE==='free'){ freshWorld({fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'ranking'}); }
+  else goStep(STEP);
+  renderWalk(); queueRender();
+});
+document.querySelectorAll('#speedSeg button[data-speed]').forEach(b=>b.onclick=()=>{ S.speed=+b.dataset.speed; queueRender(); });
+document.getElementById('pauseBtn').onclick = ()=> setPaused(!PAUSED);
+document.getElementById('themeBtn').onclick=()=>{
+  const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+  document.documentElement.dataset.theme = cur==='dark'?'light':'dark';
+  try{ localStorage.setItem('rook-theme', document.documentElement.dataset.theme); }catch(e){}
+};
+try{ const t=localStorage.getItem('rook-theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+
+const startIdx = Math.max(0, STEPS.findIndex(s=>'#'+s.id===location.hash));
+goStep(startIdx);
+setInterval(tick, 50);
+</script>
+</body>
+</html>

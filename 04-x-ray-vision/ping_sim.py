@@ -69,6 +69,7 @@ SPEED_SPREAD = 0.05                # small person-to-person variation
 
 # Travel time: home area 3-12 min, a neighbouring area 10-30 min.
 HOME_MINUTES, NEIGHBOUR_MINUTES = (3, 12), (10, 30)
+OUTER_MINUTES = (25, 44)           # two areas away, only asked if "widen" is on
 PROXIMITY_HORIZON = 45
 
 CALIBRATION = {  # real numbers, for comparison
@@ -99,6 +100,25 @@ POLICIES = {
     "D. B with a 90 s wait": dict(
         wait=90, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
         half_life_days=3, grace=0),
+    # Designs that keep a strict 60 s for everyone (nothing counts after it).
+    "E. B + offer again to anyone who missed": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, reoffer=True),
+    "F. B + heads-up to next in line": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, headsup=0.5),
+    "G. B + ask two at once": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, pair=True),
+    "H. B + one-tap yes (10 s quicker)": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, faster=10),
+    "I. B + E + F": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, reoffer=True, headsup=0.5),
+    "J. B + E + F + H": dict(
+        wait=60, w_prox=0.60, w_score=0.25, yes=0.06, no=0.06, miss=-0.06,
+        half_life_days=3, reoffer=True, headsup=0.5, faster=10),
 }
 BEFORE_POLICY = POLICIES["4.1 as it was"]
 
@@ -145,6 +165,97 @@ def answer(responder, rng):
     return "yes", secs
 
 
+def record_ping(r, t, after, stats):
+    if after:
+        r.pings_after += 1
+        if r.last_ping is not None:
+            r.longest_gap_after = max(r.longest_gap_after, t - r.last_ping)
+        r.last_ping = t
+        stats["pings"] += 1
+    else:
+        r.pings_before += 1
+
+
+def offer_callout(queue, pol, t, rng, after, stats):
+    """Offer one callout down the ranked queue. Returns (winner, seconds from
+    the first ping to the yes), or (None, seconds) if nobody took it.
+
+    Options a policy can switch on, all keeping the ping wait itself:
+      grace:   a yes up to this many seconds after the wait still counts
+      pair:    offer to two people at once; first yes wins, the other is
+               withdrawn with no penalty
+      headsup: the next person in line is warned when the person ahead is
+               pinged; this share of their head start comes off their time
+               to say yes
+      reoffer: before giving up, offer the callout again, with a fresh wait,
+               to anyone who missed it
+      faster:  seconds a quicker way to say yes (one tap from the lock
+               screen) takes off every yes
+    """
+    wait = pol["wait"]
+    group = 2 if pol.get("pair") else 1
+    clock = 0.0                # seconds since the first ping
+    prev_start = None          # when the previous ping went out
+    late = None                # (responder, when their late yes lands)
+    missed = []                # (responder, when their yes would have landed)
+    for i in range(0, len(queue), group):
+        batch = queue[i:i + group]
+        answers = []
+        for r in batch:
+            record_ping(r, t, after, stats)
+            kind, secs = answer(r, rng)
+            if kind == "yes":
+                secs = max(5.0, secs - pol.get("faster", 0))
+                if pol.get("headsup") and prev_start is not None:
+                    secs = max(5.0, secs - pol["headsup"] * (clock - prev_start))
+            answers.append((r, kind, secs))
+        in_time = [(clock + s, r, k) for r, k, s in answers if s <= wait]
+        first_answer = min((a[0] for a in in_time), default=None)
+        if late and (first_answer is None or late[1] < first_answer):
+            late[0].adjust(pol["yes"], t, pol)
+            return late[0], late[1]
+        yeses = sorted((a for a in in_time if a[2] == "yes"), key=lambda a: a[0])
+        if yeses:
+            when, winner, _ = yeses[0]
+            for r, k, s in answers:   # anyone who said no before the yes
+                if r is not winner and k == "no" and clock + s < when:
+                    r.adjust(pol["no"], t, pol)
+            winner.adjust(pol["yes"], t, pol)
+            if after and i == 0:
+                stats["first_taken"] += 1
+            return winner, when
+        late = None
+        for r, k, s in answers:
+            if s <= wait:
+                r.adjust(pol["no"], t, pol)
+                continue
+            r.adjust(pol["miss"], t, pol)
+            if after:
+                stats["missed"] += 1
+            if k == "yes":
+                missed.append((r, clock + s))
+                if s <= wait + pol.get("grace", 0):
+                    late = (r, clock + s)
+        prev_start = clock
+        clock += max(s if s <= wait else wait for _, _, s in answers)
+    if late:  # nobody left to ask, but the late yes still lands
+        late[0].adjust(pol["yes"], t, pol)
+        return late[0], late[1]
+    if pol.get("reoffer"):
+        for r, lands in missed:
+            record_ping(r, t, after, stats)
+            if lands <= clock + wait:   # ready now, or answers within the wait
+                when = max(lands, clock + rng.uniform(5, 15))
+                if when <= clock + wait:
+                    r.adjust(pol["yes"], t, pol)
+                    return r, when
+            r.adjust(pol["miss"], t, pol)
+            if after:
+                stats["missed"] += 1
+            clock += wait
+    return None, clock
+
+
 def run(policy, seed):
     rng = random.Random(seed)
     responders = []
@@ -166,10 +277,14 @@ def run(policy, seed):
         area = rng.choices(range(n_areas), weights=weights)[0]
         region = {area, (area - 1) % n_areas, (area + 1) % n_areas}
 
+        if pol.get("widen"):   # also ask the next ring of areas out
+            region |= {(area - 2) % n_areas, (area + 2) % n_areas}
+
         candidates = []
         for r in responders:
             if r.area in region and r.busy_until <= t and rng.random() < AVAILABLE_PROB:
-                lo, hi = HOME_MINUTES if r.area == area else NEIGHBOUR_MINUTES
+                ring = min((r.area - area) % n_areas, (area - r.area) % n_areas)
+                lo, hi = (HOME_MINUTES, NEIGHBOUR_MINUTES, OUTER_MINUTES)[ring]
                 minutes = rng.uniform(lo, hi)
                 prox = max(0.0, 1.0 - minutes / PROXIMITY_HORIZON)
                 s = pol["w_prox"] * prox + pol["w_score"] * r.current_score(t, pol) + 0.15
@@ -181,47 +296,7 @@ def run(policy, seed):
         if after:
             stats["callouts"] += 1
             stats["home_first"] += candidates[0][1].area == area
-        clock = 0.0              # seconds since the first ping
-        winner = None
-        late = None               # (responder, seconds) a late yes in grace
-        for pos, (_, r) in enumerate(candidates):
-            if after:
-                r.pings_after += 1
-                if r.last_ping is not None:
-                    r.longest_gap_after = max(r.longest_gap_after, t - r.last_ping)
-                r.last_ping = t
-                stats["pings"] += 1
-            else:
-                r.pings_before += 1
-            kind, secs = answer(r, rng)
-            # A late yes from the previous person wins unless this person
-            # answers before it lands.
-            if late and not (secs <= pol["wait"] and clock + secs < late[1]):
-                winner, clock = late[0], late[1]
-                winner.adjust(pol["yes"], t, pol)
-                break
-            if kind == "no" and secs <= pol["wait"]:
-                r.adjust(pol["no"], t, pol)
-                clock += secs
-                continue
-            if kind == "yes" and secs <= pol["wait"]:
-                r.adjust(pol["yes"], t, pol)
-                winner, clock = r, clock + secs
-                if after and pos == 0:
-                    stats["first_taken"] += 1
-                break
-            # Missed: nothing within the wait.
-            r.adjust(pol["miss"], t, pol)
-            if after:
-                stats["missed"] += 1
-            late = None
-            if kind == "yes" and secs <= pol["wait"] + pol["grace"]:
-                late = (r, clock + secs)
-            clock += pol["wait"]
-        else:
-            if late:  # nobody left to ask, but the late yes still lands
-                winner, clock = late[0], late[1]
-                winner.adjust(pol["yes"], t, pol)
+        winner, clock = offer_callout([r for _, r in candidates], pol, t, rng, after, stats)
         if winner is None:
             if after:
                 stats["nobody"] += 1
