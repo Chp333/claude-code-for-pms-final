@@ -1,8 +1,10 @@
 # Rook Dispatch: fixing 4.2's side effects without undoing 4.2
 
-Requirements · Product, Dispatch · v1.0 · 7 November 2026
+Requirements · Product, Dispatch · v1.1 · 7 November 2026
 For: Helen Achebe (Director of Product), Marcus Oyelaran, Wen Li, Sofia Marino,
 Ravi Menon, Nadia Hoffmann, Rook Supply
+
+v1.1 (7 Nov 2026): DR-06 merged into DR-11.
 
 Supersedes `missed-ping-requirements.md` (v0.7) for planning. That draft was written
 on earlier assumptions; this one is built from a fresh read of the wiki, Priya's
@@ -97,7 +99,7 @@ score = (accept credits + 0.75 × 5) ÷ (accept credits + 0.5 × quick no's
 | Quick "no" | 0.5 against | Cheaper than a miss, so declining beats ignoring (DR-01) |
 | Delivered miss | 1.0 against | Holds the callout the full 60 s |
 | Release after accepting | 1.5 against, **and the accept's credit (including any boost) is removed** | Faking an accept always costs more than declining (DR-07) |
-| Not counted | Declines for callouts outside home area or beyond 45 min; undelivered pings; pings delivered with under 45 s left; excused releases | DR-05, DR-06, DR-07 |
+| Not counted | Declines for callouts outside home area or beyond 45 min; pings the phone never confirmed; excused releases | DR-05, DR-07, DR-11 |
 | Starting point | As if 5 pings at 0.75 (pre-4.2 average acceptance was 77%) | A responder with no recent pings sits at 0.75 |
 | Window | **Time-based.** Length is a **Decision**: no requirement exists. Options: 3 days (earlier draft R1), 14 days, 30 days. | A count-based window never moves for someone who gets no pings |
 | Floor | **0.6** for ranking (**Decision**) | A bad record costs at most about 3 minutes of travel vs a typical responder (0.77) |
@@ -190,18 +192,9 @@ goal check → what-if checks. Priority: **P0** must ship in the first release;
 - **What-if checks:**
   - *Neighbours start declining every out-of-area callout, so coverage drops in the four areas* → once DR-03/DR-08 restore the local responders, fewer out-of-area pings are sent at all. Unfilled rate is a guardrail (DR-27).
 
-#### DR-06 Only count misses the responder could have answered · P0 · depends on delivery receipts
-- **Problem:** The countdown starts at send (E9). Late or failed delivery is charged to the responder as a miss.
-- **Job to be done:** *When my phone gets the ping late or not at all, I want that not to count against me, so I'm not punished for the network.*
-- **Requirement:** A miss counts only if the phone confirmed delivery with at least 45 seconds left. Undelivered pings and late deliveries are recorded but not counted.
-- **Acceptance criteria:**
-  - Delivery time is recorded for every ping (DR-26).
-  - Misses delivered with under 45 s left don't change the score.
-  - Wen confirms phones can report delivery reliably on supported devices, including older phones (ticket 3034).
-- **Goal check:** G1 ✅ · G2 ➖ · C1 ✅ no time added
-- **What-if checks:**
-  - *Responders switch delivery off to dodge penalties* → DR-11 marks repeated undelivered pings as "unreachable".
-  - *Delivery reports are unreliable on some phones, so real misses go uncounted* → measure report reliability before switching this rule on.
+#### DR-06 Merged into DR-11 (7 November 2026)
+- **What changed:** this requirement said a ping that reached the phone with under 45 seconds left wouldn't count against the responder if missed. With DR-11 on, that case can't happen: a ping with no delivery receipt after 15 seconds has already moved on, so any ping that does reach the phone has at least 45 seconds left. The part that still matters (a ping the phone never confirmed is never held against the responder) is now in DR-11.
+- **Not to be confused with:** restarting the 60-second countdown when the ping arrives. That was rejected earlier because it could keep a ping open past 60 seconds (section 8).
 
 #### DR-07 Release after accepting is the costliest outcome · P0
 - **Problem:** With "no" cheaper and accepts boosted, the cheapest move could be a fake yes. Nothing records a responder who accepts and doesn't go (E18).
@@ -262,20 +255,25 @@ goal check → what-if checks. Priority: **P0** must ship in the first release;
   - *Paused while genuinely busy for an evening* → one tap to return; the alert says so.
   - *Supply books maintenance into a "paused" window it reads as quiet* → keep the pause Dispatch-only unless Supply signs off.
 
-#### DR-11 Undelivered pings move on early; repeated non-delivery → "unreachable" · P0
-- **Problem:** An undelivered ping holds the callout for the full 60 s for nothing (E3, E9).
-- **Job to be done:** *When a responder's phone can't be reached, I want the callout to move on quickly, so the incident doesn't wait on a dead phone.*
+#### DR-11 Undelivered pings move on early and never count against the responder; repeated non-delivery → "unreachable" · P0 · depends on delivery receipts
+- **Problem:** An undelivered ping holds the callout for the full 60 s for nothing (E3, E9), and today it's charged to the responder as a miss even though their phone never got it.
+- **Job to be done:** *When a responder's phone can't be reached, I want the callout to move on quickly and the responder not to be blamed, so the incident doesn't wait on a dead phone and nobody is punished for the network.*
 - **Requirement:**
-  - With no delivery receipt within 15 seconds, the callout moves to the next responder, with no penalty.
+  - With no delivery receipt within 15 seconds, the callout moves to the next responder.
+  - A ping the phone never confirmed is recorded but never counted against the responder. (This includes the former DR-06.)
   - Two undelivered pings in a row mark the responder "unreachable" until the app checks in; the handler is alerted.
   - A late-arriving push for a ping that has moved on is withdrawn, or shown as "already covered".
 - **Acceptance criteria:**
   - No ping waits longer than 15 s without a delivery receipt.
+  - An undelivered ping doesn't change the responder's score.
+  - Sent and delivered times are recorded for every ping (DR-26).
   - A withdrawn ping never shows as live.
-- **Goal check:** G1 ➖ · G2 ✅ 15 s instead of 60 · C1 ✅ shorter, never longer
+  - Wen confirms phones can report delivery reliably on supported devices, including older phones (ticket 3034).
+- **Goal check:** G1 ✅ responders aren't demoted for network failures · G2 ✅ 15 s instead of 60 · C1 ✅ shorter, never longer
 - **What-if checks:**
   - *Delivery switched off to dodge penalties* → "unreachable" state.
   - *Ping arrives at second 16 after moving on, so the responder sees a vanished ping* → withdraw or "already covered".
+  - *Older phones report delivery unreliably, so real deliveries look undelivered* → measure report reliability before switching this rule on.
 
 ### C. Answering inside 60 seconds
 
@@ -553,7 +551,7 @@ goal check → what-if checks. Priority: **P0** must ship in the first release;
 | W10 | Neighbours are penalised for declining out-of-area calls | G1 | DR-05 |
 | W11 | Responders switch off delivery to dodge misses | G2 | DR-11 |
 | W12 | A ping arrives after it has moved on | Trust | DR-11 |
-| W13 | Older phones report delivery unreliably | Fairness | DR-06 criteria |
+| W13 | Older phones report delivery unreliably | Fairness | DR-11 criteria |
 | W14 | The window is by count, not time | G1 | DR-02 |
 | W15 | Switching formulas shocks rankings like 4.2 | G1, G2 | DR-08, DR-28 |
 | W16 | The four are reset by hand | Fairness; doesn't last | DR-08 recompute |
@@ -585,7 +583,7 @@ goal check → what-if checks. Priority: **P0** must ship in the first release;
 | Option | Why rejected |
 |---|---|
 | Restore the 90-second wait | Reverts half of 4.2 (fails G2, breaks C1). Dead time actually went up at 60 s only because of the scoring, which this fixes. |
-| Start the countdown when the ping arrives | Can hold a ping past 60 s from send (breaks C1). Replaced by DR-06, DR-11, DR-13–DR-16. |
+| Start the countdown when the ping arrives | Can hold a ping past 60 s from send (breaks C1). Replaced by DR-11, DR-13–DR-16. |
 | Stop scoring misses | Makes ignoring a ping free (fails G2). |
 | Score a miss the same as a "no" (today) | No reason to decline (fails G2); honest locals sink (fails G1). |
 | Raise the miss penalty | History overrides proximity more (fails G1). |
@@ -607,8 +605,8 @@ goal check → what-if checks. Priority: **P0** must ship in the first release;
 | **Release B: answering in time** | DR-13 – DR-17, DR-22 – DR-24, rest of DR-25, DR-20 phase 1 | Security sign-off for DR-13/DR-14; Sofia's prototype tested with 2+ handlers |
 | **Later** | DR-20 phase 2, DR-21 overlap | Tag completeness; delivery/answer data shows the benefit |
 
-If phones can't report delivery (DR-06/DR-11 dependency), Release A ships with
-every miss counted and the floor and boost doing the protecting; DR-06 and DR-11
+If phones can't report delivery (DR-11 dependency), Release A ships with
+every miss counted and the floor and boost doing the protecting; DR-11
 follow when receipts exist.
 
 ## 10. Expected outcomes (estimates, to be confirmed by the replay)

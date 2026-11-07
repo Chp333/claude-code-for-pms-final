@@ -258,3 +258,15 @@ Module 5 notes:
 - Student wants plain English for audiences (no "recompute", "floor", "interim").
   Open: Security Policy 4.1 isn't in the wiki (needed for lock-screen accept); Wen to
   confirm delivery receipts, why callouts stop after one ping, where scores are stored.
+
+Module 6 notes:
+- Built the `qa-testing` skill (`.claude/skills/qa-testing/SKILL.md`): brief + staging →
+  acceptance criteria → student approves → tests in the browser → Word findings doc.
+- First run: 108 criteria approved (96 testable, 12 not testable by the student's choice) in
+  `qa/2026-11-07-dispatch-recovery/acceptance-criteria.md`, against the requirements doc and
+  Helen's brief (13 promises). Tests NOT run yet; the student said "not yet".
+- Decisions: excused release = no accept credit, no penalty; DR-19 alerts after 3 pings OR 3
+  minutes; DR-06 merged into DR-11 (requirements now v1.1; prototype now 33 steps). A ping the
+  phone never confirms moves on at 15 s and never counts. No "under 45 s left" rule.
+- Only a review-checklist *output* exists (`06-sidekicks/scheduled-run-output.txt`: owner,
+  success measure, bounded scope, problem before fix); no checklist definition or briefs folder.

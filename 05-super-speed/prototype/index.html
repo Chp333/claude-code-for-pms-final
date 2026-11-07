@@ -333,10 +333,9 @@ const SWITCHES = [
   ['floor','DR-03','Floor on the score (0.6)'],
   ['boost','DR-04','Recovery boost (accepts ×3 below the middle)'],
   ['outArea','DR-05','Out-of-area declines don\'t count'],
-  ['delivered','DR-06','Only count misses that arrived in time'],
   ['release','DR-07','Release after accepting is costliest'],
   ['streak','DR-10','Streak → confirm availability'],
-  ['move15','DR-11','Undelivered after 15 s → move on'],
+  ['move15','DR-11','Undelivered after 15 s → move on, never counted'],
   ['lock','DR-13','Answer from lock screen (generic + biometric)'],
   ['alert','DR-14','Hard-to-miss alert + watch'],
   ['countdown','DR-15','Countdown on the alert'],
@@ -493,7 +492,7 @@ function finish(p, type){
   p.outcome = type; p.closedAt = S.now; S.maxOpen = Math.max(S.maxOpen, S.now-p.sentAt);
   let recType = type;
   if (type==='miss'){
-    if (on('delivered') && (!p.deliveredAt || p.late)) { recType = p.deliveredAt ? 'miss_late' : 'undelivered'; p.note = p.deliveredAt ? `Arrived with ${Math.round(60-(p.deliveredAt-p.sentAt))} s left: not counted` : 'Never arrived: not counted'; }
+    if (on('move15') && !p.deliveredAt) { recType = 'undelivered'; p.note = 'Never arrived: not counted'; }
     pushLog(`${r.name} missed the ping (${fmtT(S.now-p.sentAt)}).${p.note?' '+p.note+'.':''}`);
   }
   if (type==='undelivered'){ p.note='No delivery receipt in 15 s: moved on, not counted'; pushLog(`${r.name}: no delivery receipt after 15 s. Moved on, no penalty.`); }
@@ -1173,21 +1172,6 @@ const STEPS = [
     await x.say('Her phone tells her straight away: outside your area, no effect on standing.', 'pnote', 4000);
     await x.say(`Her score is still ${rawScore(byId('nightwell')).toFixed(3)} (was ${before.toFixed(3)}). She stays first for Midtown.`, 'meter', 5000);
   }},
-{ id:'DR-06', group:'A · Scoring', title:'Only count misses the responder could have answered', pri:'P0',
-  problem:'The 60-second timer starts when we send the request, not when it reaches the phone. If the phone gets it late, the responder has less time, and is still blamed if they miss it.',
-  jtbd:'When my phone gets the ping late or not at all, I want that not to count against me, so I\'m not punished for the network.',
-  solved:'If a request reaches the phone too late to answer comfortably (less than 45 seconds left), missing it doesn\'t count against the responder.',
-  criteria:['Delivery time recorded for every ping','Late-delivered misses don\'t change the score','Wen confirms delivery receipts work, including older phones'],
-  goals:['G1 ✅','G2 ➖','C1 ✅'], whatif:['Switch off delivery to dodge penalties → DR-11 unreachable','Unreliable receipts → measure before switching on'],
-  setup:{fixed:true, handler:'Aunt Dot', phone:'vesper', tab:'timeline', sw:{move15:false}, prep:s=>{ s.R.find(r=>r.id==='vesper').delay=24; }},
-  async script(x){
-    x.raise('Old Town',{what:'A woman on stilts is emptying a bank.'});
-    await x.say('The ping is sent, but the network holds it.', 'pingtable', 3500);
-    x.speed(4); await x.delivered('vesper'); x.speed(1);
-    await x.say('It reaches Vesper 24 seconds late. She has 36 seconds instead of 60.', 'ring', 4500);
-    x.speed(10); await x.until(()=>x.ping('vesper').outcome, 30000); x.speed(1);
-    await x.say('It\'s recorded as a miss, but not counted: it arrived with under 45 seconds left.', 'tl-vesper', 5000);
-  }},
 { id:'DR-07', group:'A · Scoring', title:'Release after accepting is the costliest outcome', pri:'P0',
   problem:'Once saying no costs less, someone could tap Accept just to protect their score, then not turn up. Today nothing records that.',
   jtbd:'As a handler, when my responder accepts a callout, I want to trust they\'re going, so the incident isn\'t left waiting on a fake yes.',
@@ -1262,8 +1246,8 @@ const STEPS = [
     await x.tap('imavail', ()=>{ const r=byId('mite'); r.status='available'; r.streakMiss=0; pushLog('Meteor Mite confirmed available.'); }, 1200);
     await x.say('She taps "I\'m available" and she\'s back in rotation. Nothing was held against her.', 'card-mite', 4500);
   }},
-{ id:'DR-11', group:'B · Availability', title:'Undelivered pings move on early; repeated → unreachable', pri:'P0',
-  problem:'If a phone has no signal, the callout still waits the full 60 seconds for an answer that can never come.',
+{ id:'DR-11', group:'B · Availability', title:'Undelivered pings move on early and never count; repeated → unreachable', pri:'P0',
+  problem:'If a phone has no signal, the callout still waits the full 60 seconds for an answer that can never come, and the responder is blamed for missing a request they never saw.',
   jtbd:'When a responder\'s phone can\'t be reached, I want the callout to move on quickly, so the incident doesn\'t wait on a dead phone.',
   solved:'If the phone hasn\'t confirmed it got the request within 15 seconds, we move on to the next responder, with no penalty. After 2 in a row, we stop trying that phone until it reconnects, and tell the handler.',
   criteria:['No ping waits more than 15 s without a receipt','A withdrawn ping never shows as live'],
