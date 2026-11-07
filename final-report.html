@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release 4.2 Final Report</title>
+<meta name="description" content="What Release 4.2 did to Rook Dispatch, the evidence from six modules, the fix shown in the prototype, and how the qa-testing skill keeps it from happening again.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f5f9; --surface:#fcfcfb; --panel:#ffffff; --ink:#0b0b0b; --ink2:#52514e; --muted:#77766f; --line:#e4e4df;
+  --accent:#6250d6; --accent-soft:#eeecfb; --hero1:#2a2170; --hero2:#0d366b;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;            /* validated categorical slots 1–3 (light) */
+  --good:#0ca30c; --crit:#d03b3b; --warn:#fab219;      /* status, always with a label */
+  --shadow:0 18px 50px rgba(20,20,40,.10);
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme: dark;
+    --bg:#101012; --surface:#1a1a19; --panel:#1f1f1e; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a998f; --line:#33332f;
+    --accent:#9085e9; --accent-soft:#25223f; --hero1:#1b1640; --hero2:#0b2547;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#101012; --surface:#1a1a19; --panel:#1f1f1e; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a998f; --line:#33332f;
+  --accent:#9085e9; --accent-soft:#25223f; --hero1:#1b1640; --hero2:#0b2547;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --shadow:0 18px 50px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.slide{min-height:100vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;padding:72px max(16px,6vw) 72px;position:relative}
+.inner{max-width:1180px;width:100%;margin:0 auto}
+.kicker{font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+h1{font-size:clamp(38px,6vw,72px);line-height:1.02;letter-spacing:-.035em;margin:0 0 18px;font-weight:900}
+h2{font-size:clamp(28px,3.6vw,46px);line-height:1.08;letter-spacing:-.025em;margin:0 0 14px;font-weight:850}
+h3{font-size:18px;margin:0 0 8px;letter-spacing:-.01em}
+.lede{font-size:clamp(17px,1.6vw,21px);color:var(--ink2);max-width:860px;margin:0 0 26px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:var(--shadow)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media (max-width:900px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+/* hero */
+.hero{background:radial-gradient(120% 90% at 0% 0%,var(--hero1),transparent 60%),radial-gradient(120% 90% at 100% 100%,var(--hero2),transparent 60%),#07070c;color:#f3f2ff}
+.hero .kicker{color:#b7aef7}
+.hero .lede{color:#cfcbf3}
+.hero-num{display:flex;gap:22px;flex-wrap:wrap;margin-top:26px}
+.hero-num div{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:16px 20px;min-width:220px}
+.hero-num b{display:block;font-size:42px;font-weight:900;letter-spacing:-.03em}
+.hero-num span{color:#cfcbf3;font-size:14px}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.2);color:#cfcbf3;margin-top:28px}
+/* stat tiles */
+.stat .k{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:40px;font-weight:900;letter-spacing:-.03em;line-height:1.1;margin:6px 0 2px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.stat .v small{font-size:18px;font-weight:700;color:var(--muted)}
+.stat .v .arrow{font-size:22px;color:var(--muted)}
+.stat .s{font-size:14px;color:var(--ink2)}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px}
+.badge.bad{background:color-mix(in srgb,var(--crit) 14%,transparent);color:var(--crit)}
+.badge.good{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+/* story steps */
+.story{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+@media (max-width:900px){.story{grid-template-columns:1fr}}
+.story div{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;position:relative}
+.story i{font-style:normal;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--accent-soft);color:var(--accent);font-weight:900;margin-bottom:8px}
+/* mechanism diagram */
+.flow svg{width:100%;height:auto;display:block}
+.flow text{font-family:Inter,system-ui,sans-serif}
+/* module slides */
+.mod-head{display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+.mod-num{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-weight:900;font-size:24px;color:#fff;background:linear-gradient(135deg,var(--accent),var(--s1))}
+.mod-name{font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.prompt{background:var(--accent-soft);border-radius:20px 20px 20px 6px;padding:18px 20px;position:relative}
+.prompt .who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.prompt .who span{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:10px}
+.prompt q{display:block;font-size:19px;line-height:1.45;font-weight:600;quotes:"\201C" "\201D"}
+.prompt q.long{font-size:15px;font-weight:500}
+.prompt .src{margin-top:10px;font-size:12px;color:var(--muted)}
+.finding{margin-top:16px}
+.finding p{margin:0 0 10px;color:var(--ink2)}
+.finding b{color:var(--ink)}
+/* charts */
+.chart{position:relative}
+.chart svg{width:100%;height:auto;display:block;overflow:visible}
+.chart .ttl{font-weight:800;font-size:15px;margin-bottom:2px}
+.chart .sub{font-size:13px;color:var(--muted);margin-bottom:10px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink2);margin:4px 0 8px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.axis{fill:var(--muted);font-size:12px}
+.val{fill:var(--ink);font-size:12px;font-weight:700}
+.valin{fill:#fff;font-size:11px;font-weight:800}
+.gridl{stroke:var(--line);stroke-width:1}
+.mark{cursor:pointer;transition:opacity .15s}
+.mark:hover{opacity:.82}
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--ink);color:var(--panel);font-size:13px;padding:8px 10px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s;max-width:260px}
+.tip.on{opacity:1;transform:none}
+details.data{margin-top:8px;font-size:13px}
+details.data summary{cursor:pointer;color:var(--muted);font-weight:600}
+details.data table{border-collapse:collapse;margin-top:6px;width:100%}
+details.data td,details.data th{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left}
+/* ladder */
+.ladder{display:flex;flex-direction:column;gap:10px}
+.rung{display:grid;grid-template-columns:150px 1fr 70px;align-items:center;gap:12px}
+.rung .lbl{font-weight:700}
+.rung .bar{height:16px;border-radius:0 6px 6px 0;background:var(--s2)}
+.rung .bar.plus{background:var(--s1)}
+.rung .num{font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+/* prototype embed */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chipbtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.chipbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.embed{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);background:var(--surface)}
+.embed iframe{border:0;transform-origin:0 0;position:absolute;left:0;top:0}
+.embed-note{font-size:13px;color:var(--muted);margin-top:8px}
+.embed-note a{color:var(--accent);font-weight:700}
+/* compare */
+.compare{width:100%;border-collapse:separate;border-spacing:0 8px}
+.compare th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:0 14px}
+.compare td{background:var(--panel);padding:14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top}
+.compare td:first-child{border-left:1px solid var(--line);border-radius:14px 0 0 14px;font-weight:700}
+.compare td:last-child{border-right:1px solid var(--line);border-radius:0 14px 14px 0}
+.x{color:var(--crit);font-weight:800}.ok{color:var(--good);font-weight:800}
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:8px 0 18px}
+@media (max-width:900px){.pipe{grid-template-columns:1fr}}
+.pipe div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;font-size:14px;position:relative}
+.pipe div b{display:block;font-size:13px;color:var(--accent);margin-bottom:4px}
+.pipe div.gate{border:2px solid var(--accent)}
+/* chrome */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:40;display:flex;align-items:center;gap:12px;padding:10px 18px;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.topbar b{font-weight:800}
+.topbar .grow{flex:1}
+.topbar button{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:6px 10px;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.progress{position:fixed;left:0;top:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--s1));z-index:41;width:0;transition:width .2s}
+.dots{position:fixed;right:14px;top:50%;transform:translateY(-50%);z-index:40;display:flex;flex-direction:column;gap:8px}
+.dots a{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.dots a.on{background:var(--accent);transform:scale(1.35)}
+@media (max-width:760px){.dots{display:none}.topbar .hide-sm{display:none}}
+.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+.in .reveal{opacity:1;transform:none}
+.in .reveal.d1{transition-delay:.08s}.in .reveal.d2{transition-delay:.16s}.in .reveal.d3{transition-delay:.24s}
+@media (prefers-reduced-motion: reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
+.foot{font-size:12px;color:var(--muted);margin-top:22px}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <b>Release 4.2 · Final report</b><span class="muted small hide-sm">Rook Dispatch · 7 Nov 2026</span>
+  <span class="grow"></span>
+  <span class="count" id="count"></span>
+  <button id="prev" title="Previous slide (←)">←</button><button id="next" title="Next slide (→)">→</button>
+  <button id="theme" title="Light / dark">◐</button>
+</header>
+<nav class="dots" id="dots"></nav>
+<div class="tip" id="tip"></div>
+
+<!-- 1 · TITLE -->
+<section class="slide hero" data-title="Title">
+  <div class="inner">
+    <div class="kicker reveal">Rook Dispatch · Product Management</div>
+    <h1 class="reveal d1">Release 4.2 asked the closest responder first.<br>Then it stopped asking four of them at all.</h1>
+    <p class="lede reveal d2">What went wrong, the evidence from six modules of work, the fix (shown in a working prototype), and the skill that keeps it from happening again.</p>
+    <div class="hero-num reveal d3">
+      <div><b>−70%</b><span>work for 4 responders: ~12 requests a week fell to 3–5</span></div>
+      <div><b>2×</b><span>callouts nobody took: 5.5% rose to 11.1%</span></div>
+      <div><b>83% → 16%</b><span>Old Town callouts going to its own local responder</span></div>
+    </div>
+    <span class="tag">Fictional teaching scenario · Product School "Claude Code for PMs"</span>
+  </div>
+</section>
+
+<!-- 2 · WHAT HAPPENED -->
+<section class="slide" data-title="What happened">
+  <div class="inner">
+    <div class="kicker reveal">What happened, plainly</div>
+    <h2 class="reveal d1">One small timing change met an old scoring rule, and quiet responders could never climb back.</h2>
+    <div class="story reveal d2">
+      <div><i>1</i><h3>The wait got shorter</h3>4.2 cut the time to answer a request from 90 to 60 seconds, so callouts would move on faster.</div>
+      <div><i>2</i><h3>Slow yeses became misses</h3>Steady responders who answer in about a minute started running out of time.</div>
+      <div><i>3</i><h3>Misses were scored as refusals</h3>The system scored a miss as harshly as a "no", and never let a score recover over time.</div>
+      <div><i>4</i><h3>They fell off the list</h3>A low score means you're asked last, which in practice means never. Their neighbours got the work.</div>
+    </div>
+    <div class="grid4 reveal d3">
+      <div class="card stat"><div class="k">Missed requests / week</div><div class="v">~4 <span class="arrow">→</span> ~30</div><span class="badge bad">▲ about 7×</span></div>
+      <div class="card stat"><div class="k">Callouts nobody took</div><div class="v">5.5% <span class="arrow">→</span> 11.1%</div><span class="badge bad">▲ doubled</span></div>
+      <div class="card stat"><div class="k">The 4 quiet responders</div><div class="v">~12 <span class="arrow">→</span> 3–5<small>/wk</small></div><span class="badge bad">▼ about 70%</span></div>
+      <div class="card stat"><div class="k">Old Town to its local responder</div><div class="v">83% <span class="arrow">→</span> 16%</div><span class="badge bad">▼ goal reversed</span></div>
+    </div>
+    <p class="foot">It wasn't a soft August: the week before release (3 Aug) was the best week in the data, and the drop starts on release day itself.</p>
+  </div>
+</section>
+
+<!-- 3 · MECHANISM -->
+<section class="slide" data-title="How it happened">
+  <div class="inner">
+    <div class="kicker reveal">How it happened</div>
+    <h2 class="reveal d1">A trap with no exit</h2>
+    <p class="lede reveal d1">Every step makes the next one worse, and nothing in the code ever lets a responder out.</p>
+    <div class="card flow reveal d2" id="flow"></div>
+    <p class="foot">The 4.2 ranking weights weren't the cause. 4.2 actually reduced how much past answers count (0.40 → 0.25). The trap was the scoring underneath.</p>
+  </div>
+</section>
+
+<!-- 4–9 · MODULES -->
+<section class="slide" data-title="Module 1">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">1</div><div><div class="mod-name">Module 1 · Origin story</div><h2 style="margin:0">A miss cost the same as a "no", and misses exploded</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q>What is the problem with product that needs to be fixed</q><div class="src">01-origin-story/prompts.md · #1</div></div>
+        <div class="finding">
+          <p><b>Finding:</b> in the code, a missed request costs −0.12, exactly like a turn-down, and only a "yes" (+0.08) ever raises a score. After the cut to 60 seconds, misses jumped from 2–6 a week to 38.</p>
+          <div class="ladder" id="m1ladder"></div>
+        </div>
+      </div>
+      <div class="card chart reveal d2" id="m1chart"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-title="Module 2">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">2</div><div><div class="mod-name">Module 2 · Super hearing</div><h2 style="margin:0">Customers felt it before the data showed it</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q>What would you identify as the main bug root cause</q><div class="src">02-super-hearing/prompts.md · #7</div></div>
+        <div class="finding">
+          <p><b>Finding:</b> the root cause is <b>dispatch() scoring a miss as a refusal</b> (−0.12 vs +0.08 for a yes) with <b>no recovery</b>. The 4.2 cut to 60 seconds then demoted responders permanently. It's not the ranking weights.</p>
+          <p>The four handler interviews pointed the same way: "coat on, one boot on" when the callout was already gone.</p>
+        </div>
+      </div>
+      <div class="card chart reveal d2" id="m2chart"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-title="Module 3">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">3</div><div><div class="mod-name">Module 3 · Rewind</div><h2 style="margin:0">One responder's summer, week by week</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q>For Desmond Okafor Show me every week since June: how many pings, and what they did with each.</q><div class="src">03-rewind/prompts.md · #10</div></div>
+        <div class="finding">
+          <p><b>Finding:</b> The Undertow (Desmond Okafor's only responder) got about 12 requests a week, every week, and took most of them. In release week he missed 5. Then the requests nearly stopped: 4, then 1, then 1, and he missed the last two because they came so rarely.</p>
+          <p>Desmond filed ticket after ticket. Every one is still open.</p>
+        </div>
+      </div>
+      <div class="card chart reveal d2" id="m3chart"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-title="Module 4">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">4</div><div><div class="mod-name">Module 4 · X-ray vision</div><h2 style="margin:0">The code had no way back</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q>According to my findings in the code, for someone who's gone quiet, they would need to ___.</q><div class="src">04-x-ray-vision/prompts.md · #13</div></div>
+        <div class="finding">
+          <p><b>Finding:</b> to climb back, a quiet responder would need to <b>be asked and say yes</b>, many times over. But a low score means they're rarely asked, and there's no recovery over time and no reset.</p>
+          <p>Replaying the code's own scoring showed it: everyone started 4.2 between 0.80 and 1.00. The four hit 0 because they missed 53–64% of their requests after 4.2, compared with 10–18% for everyone else.</p>
+        </div>
+      </div>
+      <div class="card chart reveal d2" id="m4chart"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-title="Module 5">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">5</div><div><div class="mod-name">Module 5 · Super speed</div><h2 style="margin:0">4.2 reversed its own goal</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q class="long">I'm not comfortable with previous assessments of what is wrong with the Rook Product. I want you to forget everything you think is happening and instead start over, go through all these prompts, ignore the output asks from each prompt, but instead at the end of you assessing all this detail, give me a summary of what you think are the issues, what you think we should fix, how would we fix it and how you think it would improve the outcome. Your goal is to still address solve the problem the previous release was solving but making sure we fix the negative results from that and identify any additional opportunities that may have been overlooked to fix.</q><div class="src">05-super-speed/prompts.md · #2</div></div>
+        <div class="finding">
+          <p><b>Finding:</b> 4.2 was meant to ask the nearest responder first. In the three hardest-hit areas, the local responder's share of their own area's requests collapsed, and callouts went to neighbours further away.</p>
+        </div>
+      </div>
+      <div class="card chart reveal d2" id="m5chart"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-title="Module 6">
+  <div class="inner">
+    <div class="mod-head reveal"><div class="mod-num">6</div><div><div class="mod-name">Module 6 · Sidekicks</div><h2 style="margin:0">A QA skill that tests the build against the brief</h2></div></div>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q class="long">Make a skill called qa-testing. When I point to the product brief that outlines the requirements &amp; the staging environment where the code build against it is housed, it creates robust acceptance criteria’s, validate’s them with me, performs the tests &amp; generates a document with all findings.
+
+Run a test on the my brief &amp; assume we’ve built the prototype in a staging environment.
+
+Ask me questions if you see fit.</q><div class="src">06-sidekicks/prompts.md · #3</div></div>
+      </div>
+      <div class="reveal d2">
+        <div class="card">
+          <h3>Artifact: <code>.claude/skills/qa-testing</code></h3>
+          <div class="grid3" style="margin:12px 0">
+            <div class="stat"><div class="k">Criteria</div><div class="v">108</div></div>
+            <div class="stat"><div class="k">Testable</div><div class="v">96</div></div>
+            <div class="stat"><div class="k">Brief issues</div><div class="v">3</div></div>
+          </div>
+          <p class="muted" style="margin:0">Its first run, against the requirements and Helen's brief, turned up a contradiction before a single test ran: two rules about late requests overlapped. You merged them (DR-06 into DR-11), so the requirements are now v1.1.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 · DESIGN RULES -->
+<section class="slide" data-title="The fix: rules">
+  <div class="inner">
+    <div class="kicker reveal">The fix · design rules</div>
+    <h2 class="reveal d1">Keep what 4.2 got right. Remove the trap.</h2>
+    <div class="grid2">
+      <div class="reveal d1">
+        <div class="card" style="margin-bottom:16px">
+          <h3>Two goals that must stay solved</h3>
+          <p style="margin:0 0 6px">✅ <b>Nearest first:</b> the closest responder is asked first. The 4.2 weights stay.</p>
+          <p style="margin:0">✅ <b>Fast hand-off:</b> no request ever stays open more than 60 seconds. No rollback to 90.</p>
+        </div>
+        <div class="prompt"><div class="who"><span>PM</span>Your prompt</div><q>does restoring the 90 second preserve the problem we are trying to resolve from the first release?</q><div class="src">05-super-speed/prompts.md · #3</div></div>
+      </div>
+      <div class="reveal d2">
+        <div class="card">
+          <h3>New scoring: answering always beats ignoring</h3>
+          <p class="muted small" style="margin-top:0">How much each outcome counts against a responder (accepts count toward them)</p>
+          <div class="ladder" id="ladder"></div>
+          <p class="small muted" style="margin:12px 0 0">Plus: old mistakes expire over time · a minimum score (a bad record costs at most ~3 minutes of travel, not 19) · accepts count 3× while below average (about 8 to get back) · 3 misses in a row → "Still available?", not a penalty.</p>
+        </div>
+        <div class="prompt" style="margin-top:16px"><div class="who"><span>PM</span>Your prompt</div><q class="long">The misses and no's have NOTHING to do with evidence, its simple logic... what is the adverse cause of this if the misses and no's are at least scored equally "If misses cost less, responders might let pings expire on purpose. I had no evidence for this."</q><div class="src">05-super-speed/prompts.md · #11</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 · PROTOTYPE -->
+<section class="slide" data-title="The fix: prototype">
+  <div class="inner">
+    <div class="kicker reveal">The fix · in the prototype</div>
+    <h2 class="reveal d1">See it work: the handler's console and the responder's phone, side by side</h2>
+    <div class="chips reveal d1" id="protoChips">
+      <button class="chipbtn on" data-step="START">What 4.2 did</button>
+      <button class="chipbtn" data-step="DR-03">Nearest first again</button>
+      <button class="chipbtn" data-step="DR-04">Back in about a week</button>
+      <button class="chipbtn" data-step="DR-10">"Still available?"</button>
+      <button class="chipbtn" data-step="DR-13">Lock-screen accept</button>
+      <button class="chipbtn" data-step="DR-23">Handler alerted</button>
+    </div>
+    <div class="embed reveal d2" id="embed"><iframe id="proto" title="Dispatch recovery prototype"></iframe></div>
+    <p class="embed-note">Press <b>▶ Simulate</b> inside the prototype to play a step. <a href="05-super-speed/prototype/index.html" target="_blank" rel="noopener">Open the full prototype ↗</a> (33 steps). The live view works when this file is opened from the project folder.</p>
+  </div>
+</section>
+
+<!-- 12 · OUTCOMES -->
+<section class="slide" data-title="Expected outcome">
+  <div class="inner">
+    <div class="kicker reveal">What changes</div>
+    <h2 class="reveal d1">Before, now, and after the fix</h2>
+    <p class="lede reveal d1">Targets from the requirements. They're estimates until engineering replays the June–September requests through the new rules.</p>
+    <div class="grid2">
+      <div class="card chart reveal d2" id="outChart"></div>
+      <div class="reveal d3" style="display:grid;gap:16px">
+        <div class="card stat"><div class="k">Most a bad record can cost</div><div class="v">19 min <span class="arrow">→</span> ~3 min</div><div class="s">of extra travel time when ranking who to ask</div></div>
+        <div class="card stat"><div class="k">Time to get back to normal</div><div class="v">never <span class="arrow">→</span> ~1 week</div><div class="s">about 8 accepts with the recovery boost</div></div>
+        <div class="card stat"><div class="k">Longest a request stays open</div><div class="v">60 s <span class="arrow">→</span> 60 s</div><div class="s">unchanged; a phone that never gets it moves on at 15 s</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 · SKILL PREVENTS -->
+<section class="slide" data-title="Never again">
+  <div class="inner">
+    <div class="kicker reveal">How the skill keeps it from happening again</div>
+    <h2 class="reveal d1">4.2 shipped without anyone checking it against its own goals</h2>
+    <div class="pipe reveal d1">
+      <div><b>1 · Understand</b>Read the brief and the build; list every goal and constraint</div>
+      <div><b>2 · Write criteria</b>Happy path, what must not happen, what-if cases, goal checks</div>
+      <div class="gate"><b>3 · PM approves</b>No test runs until you agree. This is where DR-06 was caught.</div>
+      <div><b>4 · Test the build</b>Click through it like a user; only observed results count as a pass</div>
+      <div><b>5 · Findings doc</b>Verdict, defects with steps to reproduce, gaps in the brief</div>
+    </div>
+    <table class="compare reveal d2">
+      <tr><th></th><th>How 4.2 shipped</th><th>With the qa-testing skill</th></tr>
+      <tr><td>Checked against the release's own goals</td><td><span class="x">✕</span> No. Nearest-first got worse and nobody saw.</td><td><span class="ok">✓</span> Every goal (nearest first, 60-second limit) becomes a test</td></tr>
+      <tr><td>"What if…" cases</td><td><span class="x">✕</span> None. Slow responders weren't considered.</td><td><span class="ok">✓</span> Edge cases for every requirement: no signal, mis-taps, gaming the score</td></tr>
+      <tr><td>Agreed acceptance criteria</td><td><span class="x">✕</span> None written down</td><td><span class="ok">✓</span> 108 criteria, approved by the PM before testing</td></tr>
+      <tr><td>Contradictions in the brief</td><td><span class="x">✕</span> Shipped as written</td><td><span class="ok">✓</span> Raised as questions first (DR-06 vs DR-11, merged)</td></tr>
+      <tr><td>Evidence</td><td><span class="x">✕</span> "August is always soft"</td><td><span class="ok">✓</span> A findings document: verdict, defects, steps to reproduce</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 14 · NEXT -->
+<section class="slide" data-title="Next steps">
+  <div class="inner">
+    <div class="kicker reveal">Next steps</div>
+    <h2 class="reveal d1">What happens now</h2>
+    <div class="grid3 reveal d2">
+      <div class="card"><h3>🧪 Run the QA tests</h3><p class="muted" style="margin:0">The 96 approved tests against the prototype, then a findings document for Helen.</p></div>
+      <div class="card"><h3>🧭 Helen decides</h3><p class="muted" style="margin:0">The minimum score, how long mistakes count (3, 14 or 30 days), the boost, and the new headline numbers.</p></div>
+      <div class="card"><h3>🛠 Wen confirms</h3><p class="muted" style="margin:0">Can phones confirm delivery? Why do callouts stop after one request? Where are scores stored?</p></div>
+      <div class="card"><h3>🔒 Security review</h3><p class="muted" style="margin:0">Lock-screen accept needs Security Policy 4.1, which isn't in the wiki.</p></div>
+      <div class="card"><h3>✉️ Talk to people</h3><p class="muted" style="margin:0">Reply to all 45 open tickets. Call the handlers of Vesper, Farlight, The Undertow and Meteor Mite.</p></div>
+      <div class="card"><h3>📉 Find the missing callouts</h3><p class="muted" style="margin:0">About 15% fewer callouts since release day, in 14 of 15 areas. Nobody knows why yet.</p></div>
+    </div>
+    <p class="foot">Sources: CLAUDE.md working context (Modules 1–6), all six prompts.md files, rook-database pings table (The Undertow, re-queried 7 Nov), dispatch-recovery-requirements.md v1.1, 05-super-speed/prototype, qa/2026-11-07-dispatch-recovery. Rook Industries is fictional.</p>
+  </div>
+</section>
+
+<script>
+/* ---------- tiny chart kit (inline SVG, hover tooltips, data tables) ---------- */
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const tip = document.getElementById('tip');
+document.addEventListener('mousemove', e => {
+  const m = e.target.closest('[data-tip]');
+  if (!m){ tip.classList.remove('on'); return; }
+  tip.innerHTML = m.dataset.tip; tip.classList.add('on');
+  const x = Math.min(innerWidth - tip.offsetWidth - 12, e.clientX + 14), y = Math.max(8, e.clientY - tip.offsetHeight - 12);
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+function topRounded(x, y, w, h, r){ r = Math.min(r, w/2, h); if (h <= 0) return ''; return `M${x},${y+h} V${y+r} Q${x},${y} ${x+r},${y} H${x+w-r} Q${x+w},${y} ${x+w},${y+r} V${y+h} Z`; }
+function rightRounded(x, y, w, h, r){ r = Math.min(r, h/2, w); if (w <= 0) return ''; return `M${x},${y} H${x+w-r} Q${x+w},${y} ${x+w},${y+r} V${y+h-r} Q${x+w},${y+h} ${x+w-r},${y+h} H${x} Z`; }
+function table(cols, rows){ return `<details class="data"><summary>Show the data</summary><table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table></details>`; }
+
+// Vertical bars, two series by phase (before/after), with a release marker.
+function phaseBars(el, {title, sub, labels, values, splitAt, max, unit, note}){
+  const W=560,H=280,L=34,R=8,T=18,B=40, iw=W-L-R, ih=H-T-B, n=values.length, step=iw/n, bw=step-6;
+  const y = v => T + ih - v/max*ih;
+  let g='';
+  for (let t=0;t<=max;t+=max/4){ g += `<line class="gridl" x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L-6}" y="${y(t)+4}" text-anchor="end">${Math.round(t)}</text>`; }
+  values.forEach((v,i)=>{
+    const x = L + i*step + 3, col = i>=splitAt ? 'var(--s2)' : 'var(--s1)';
+    g += `<path class="mark" d="${topRounded(x,y(v),bw,T+ih-y(v),4)}" fill="${col}" data-tip="<b>Week of ${labels[i]}</b><br>${v} ${unit}${i>=splitAt?' · after 4.2':''}"/>`;
+    if (i>=splitAt || v===Math.max(...values)) g += `<text class="val" x="${x+bw/2}" y="${y(v)-6}" text-anchor="middle">${v}</text>`;
+    g += `<text class="axis" x="${x+bw/2}" y="${H-B+16}" text-anchor="middle">${labels[i]}</text>`;
+  });
+  const rx = L + splitAt*step;
+  g += `<line x1="${rx}" x2="${rx}" y1="${T-6}" y2="${T+ih}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="4 4"/><text class="axis" x="${rx-6}" y="${T+4}" text-anchor="end" style="font-weight:700;fill:var(--ink)">4.2 ships, 12 Aug →</text>`;
+  el.innerHTML = `<div class="ttl">${title}</div><div class="sub">${sub}</div>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Before 4.2</span><span><i style="background:var(--s2)"></i>After 4.2</span></div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${g}</svg>${note?`<div class="small muted">${note}</div>`:''}
+    ${table(['Week of', unit], labels.map((l,i)=>[l, values[i]]))}`;
+}
+
+// Horizontal bars; colour by group with a legend.
+function hBars(el, {title, sub, rows, max, fmt, groups}){
+  const W=560, rowH=30, L=150, R=48, T=6, H=T+rows.length*rowH+4, iw=W-L-R;
+  let g='';
+  rows.forEach((r,i)=>{
+    const y=T+i*rowH, w=r.value/max*iw;
+    g += `<text class="axis" x="${L-10}" y="${y+18}" text-anchor="end" style="fill:var(--ink2);font-size:13px">${r.label}</text>`;
+    g += `<path class="mark" d="${rightRounded(L,y+6,w,18,4)}" fill="${r.color||'var(--s1)'}" data-tip="<b>${r.label}</b><br>${r.tip||fmt(r.value)}"/>`;
+    g += `<text class="val" x="${L+w+6}" y="${y+19}">${fmt(r.value)}</text>`;
+  });
+  el.innerHTML = `<div class="ttl">${title}</div><div class="sub">${sub}</div>
+    ${groups?`<div class="legend">${groups.map(([c,l])=>`<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>`:''}
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${g}</svg>
+    ${table(['', 'Value'], rows.map(r=>[r.label, fmt(r.value)]))}`;
+}
+
+// Stacked weekly bars (taken / turned down / missed) with 2px surface gaps.
+function stacked(el, {title, sub, labels, series, splitAt, max}){
+  const W=560,H=290,L=30,R=8,T=18,B=40, iw=W-L-R, ih=H-T-B, n=labels.length, step=iw/n, bw=step-8;
+  const y = v => T + ih - v/max*ih;
+  let g='';
+  for (let t=0;t<=max;t+=4){ g += `<line class="gridl" x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L-6}" y="${y(t)+4}" text-anchor="end">${t}</text>`; }
+  labels.forEach((lab,i)=>{
+    const x=L+i*step+4; let acc=0;
+    series.forEach((s,k)=>{
+      const v=s.values[i]; if(!v) return;
+      const y0=y(acc+v), h=v/max*ih - 2; const top = k===series.length-1 || series.slice(k+1).every(q=>!q.values[i]);
+      g += `<path class="mark" d="${top?topRounded(x,y0,bw,h,4):`M${x},${y0} h${bw} v${h} h${-bw} Z`}" fill="${s.color}" data-tip="<b>Week of ${lab}</b><br>${s.name}: ${v}"/>`;
+      if (h>13) g += `<text class="valin" x="${x+bw/2}" y="${y0+h/2+4}" text-anchor="middle">${v}</text>`;
+      acc+=v;
+    });
+    const tot = series.reduce((a,s)=>a+s.values[i],0);
+    g += `<text class="val" x="${x+bw/2}" y="${y(tot)-6}" text-anchor="middle">${tot}</text>`;
+    g += `<text class="axis" x="${x+bw/2}" y="${H-B+16}" text-anchor="middle">${lab}</text>`;
+  });
+  const rx=L+splitAt*step;
+  g += `<line x1="${rx}" x2="${rx}" y1="${T-6}" y2="${T+ih}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="4 4"/><text class="axis" x="${rx+6}" y="${T+4}" style="font-weight:700;fill:var(--ink)">4.2 ships</text>`;
+  el.innerHTML = `<div class="ttl">${title}</div><div class="sub">${sub}</div>
+    <div class="legend">${series.map(s=>`<span><i style="background:${s.color}"></i>${s.name}</span>`).join('')}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${g}</svg>
+    ${table(['Week of', ...series.map(s=>s.name)], labels.map((l,i)=>[l, ...series.map(s=>s.values[i])]))}`;
+}
+
+// Dumbbell: before → after per row.
+function dumbbell(el, {title, sub, rows, max, fmt}){
+  const W=560, rowH=54, L=120, R=40, T=24, H=T+rows.length*rowH, iw=W-L-R;
+  const x = v => L + v/max*iw;
+  let g='';
+  [0,25,50,75,100].forEach(t=>{ g += `<line class="gridl" x1="${x(t)}" x2="${x(t)}" y1="${T-10}" y2="${H-6}"/><text class="axis" x="${x(t)}" y="${T-14}" text-anchor="middle">${t}%</text>`; });
+  rows.forEach((r,i)=>{
+    const y=T+i*rowH+20;
+    g += `<text class="axis" x="${L-12}" y="${y+4}" text-anchor="end" style="fill:var(--ink2);font-size:13px;font-weight:600">${r.label}</text>`;
+    g += `<line x1="${x(r.after)}" x2="${x(r.before)}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/>`;
+    g += `<circle class="mark" cx="${x(r.before)}" cy="${y}" r="9" fill="var(--s1)" stroke="var(--panel)" stroke-width="2" data-tip="<b>${r.label}</b><br>Before 4.2: ${fmt(r.before)}"/>`;
+    g += `<circle class="mark" cx="${x(r.after)}" cy="${y}" r="9" fill="var(--s2)" stroke="var(--panel)" stroke-width="2" data-tip="<b>${r.label}</b><br>After 4.2: ${fmt(r.after)}"/>`;
+    g += `<text class="val" x="${x(r.before)}" y="${y-15}" text-anchor="middle">${fmt(r.before)}</text><text class="val" x="${x(r.after)}" y="${y-15}" text-anchor="middle">${fmt(r.after)}</text>`;
+  });
+  el.innerHTML = `<div class="ttl">${title}</div><div class="sub">${sub}</div>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Before 4.2</span><span><i style="background:var(--s2)"></i>After 4.2</span></div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${g}</svg>
+    ${table(['Area','Before 4.2','After 4.2'], rows.map(r=>[r.label, fmt(r.before), fmt(r.after)]))}`;
+}
+
+// Grouped bars: before / now / target for a few measures (each measure its own small chart row).
+function outcomes(el){
+  const rows = [
+    {m:'Local share of requests (Old Town, Uptown, Harborside)', unit:'%', vals:[80,16,76], tip:['76–83%','11–20%','≥ 76%']},
+    {m:'Requests per week for the 4 quiet responders', unit:'', vals:[12,4,10], tip:['11–14','3–5','≥ 10']},
+    {m:'Callouts nobody took', unit:'%', vals:[5.5,11.1,5.5], tip:['5.5%','11.1%','≤ 5.5%']},
+  ];
+  const names=['Before 4.2','Now','Target'], cols=['var(--s1)','var(--s2)','var(--s3)'];
+  let html = `<div class="ttl">Three numbers to watch</div><div class="sub">Before 4.2, now, and the target after the fix</div>
+    <div class="legend">${names.map((n,i)=>`<span><i style="background:${cols[i]}"></i>${n}</span>`).join('')}</div>`;
+  rows.forEach(r=>{
+    const max = Math.max(...r.vals)*1.15, W=560,H=86,L=4, bh=18, gap=4;
+    let g='';
+    r.vals.forEach((v,i)=>{
+      const w=(v/max)*(W-80), y=8+i*(bh+gap);
+      g += `<path class="mark" d="${rightRounded(L,y,w,bh,4)}" fill="${cols[i]}" data-tip="<b>${r.m}</b><br>${names[i]}: ${r.tip[i]}"/>`;
+      g += `<text class="val" x="${L+w+6}" y="${y+13}">${r.tip[i]}</text>`;
+    });
+    html += `<div style="margin-top:10px;font-weight:700;font-size:14px">${r.m}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${r.m}">${g}</svg>`;
+  });
+  html += table(['Measure', ...names], rows.map(r=>[r.m, ...r.tip]));
+  el.innerHTML = html;
+}
+
+function ladder(el, items){
+  const max = Math.max(...items.map(i=>Math.abs(i.v)));
+  el.innerHTML = items.map(i=>`<div class="rung"><span class="lbl">${i.l}</span><span><span class="bar ${i.v>0?'plus':''}" style="display:block;width:${Math.abs(i.v)/max*100}%" data-tip="${i.tip}"></span></span><span class="num">${i.v>0?'+':'−'}${Math.abs(i.v)}</span></div>`).join('');
+}
+
+// Mechanism diagram
+function flow(el){
+  const steps = [
+    ['60-second wait', '4.2 cuts the time to answer from 90 to 60 s'],
+    ['Slow yes → miss', 'steady responders answer in ~66 s'],
+    ['Miss = refusal', 'scored −0.12, same as a "no"'],
+    ['No way back', 'no recovery over time; only a yes helps'],
+    ['Asked last = never asked', '~1.3 requests per callout'],
+  ];
+  const W=1100, H=300, bw=190, bh=104, gap=(W-steps.length*bw)/(steps.length-1), y=40;
+  let g = `<defs><marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>`;
+  steps.forEach((s,i)=>{
+    const x=i*(bw+gap);
+    g += `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="16" fill="var(--panel)" stroke="${i===2?'var(--crit)':'var(--line)'}" stroke-width="${i===2?2.5:1.5}"/>`;
+    g += `<text x="${x+16}" y="${y+30}" font-size="13" font-weight="800" fill="var(--accent)">STEP ${i+1}</text>`;
+    g += `<text x="${x+16}" y="${y+56}" font-size="18" font-weight="800" fill="var(--ink)">${s[0]}</text>`;
+    g += `<foreignObject x="${x+16}" y="${y+64}" width="${bw-28}" height="40"><div xmlns="http://www.w3.org/1999/xhtml" style="font-size:12.5px;color:var(--ink2);line-height:1.3">${s[1]}</div></foreignObject>`;
+    if (i<steps.length-1) g += `<line x1="${x+bw+6}" x2="${x+bw+gap-8}" y1="${y+bh/2}" y2="${y+bh/2}" stroke="var(--muted)" stroke-width="2" marker-end="url(#ah)"/>`;
+  });
+  // loop back: never asked → can't earn a yes → stays at zero
+  const xs = 4*(bw+gap)+bw/2, xe = 3*(bw+gap)+bw/2;
+  g += `<path d="M${xs},${y+bh+6} C${xs},${y+bh+70} ${xe},${y+bh+70} ${xe},${y+bh+10}" fill="none" stroke="var(--crit)" stroke-width="2.5" marker-end="url(#ah)" stroke-dasharray="6 5"/>`;
+  g += `<text x="${(xs+xe)/2}" y="${y+bh+72}" text-anchor="middle" font-size="14" font-weight="800" fill="var(--crit)">⟲ the trap: never asked → can't earn a yes → stays at zero</text>`;
+  // outcomes
+  g += `<text x="0" y="${H-14}" font-size="14" fill="var(--ink2)"><tspan font-weight="800" fill="var(--ink)">Result:</tspan> neighbours from other areas get the work (The Gale: 13 → 19 requests a week), nearest-first is reversed, and callouts nobody took double.</text>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="How 4.2 trapped responders">${g}</svg>`;
+}
+
+function drawAll(){
+  flow(document.getElementById('flow'));
+  ladder(document.getElementById('m1ladder'), [
+    {l:'Takes the job', v:0.08, tip:'A yes adds 0.08. The only way up.'},
+    {l:'Turns it down', v:-0.12, tip:'A no takes off 0.12'},
+    {l:'Misses it', v:-0.12, tip:'A miss also takes off 0.12. Same as a no.'},
+  ]);
+  phaseBars(document.getElementById('m1chart'), {
+    title:'Missed requests per week, all responders', sub:'rook-database pings table, 29 Jun – 6 Sep',
+    labels:['29 Jun','6 Jul','13 Jul','20 Jul','27 Jul','3 Aug','10 Aug','17 Aug','24 Aug','31 Aug'],
+    values:[3,4,6,5,4,2,38,28,24,21], splitAt:6, max:40, unit:'missed',
+    note:'The week of 10 Aug includes two days before release (Mon–Tue).'
+  });
+  hBars(document.getElementById('m2chart'), {
+    title:'What the four handlers raised', sub:'Sofia\'s interviews, 2–5 Sep · how many of the 4 raised each',
+    rows:[{label:'Gone before they could answer',value:3},{label:'Handler not told it\'s live',value:3},{label:'Quiet weeks / overload',value:2},{label:'Status text too small',value:2}],
+    max:4, fmt:v=>`${v} of 4`
+  });
+  stacked(document.getElementById('m3chart'), {
+    title:'The Undertow: requests each week', sub:'Desmond Okafor\'s only responder · rook-database, re-queried 7 Nov',
+    labels:['29 Jun','6 Jul','13 Jul','20 Jul','27 Jul','3 Aug','10 Aug','17 Aug','24 Aug','31 Aug'],
+    splitAt:6, max:16,
+    series:[
+      {name:'Took it', color:'var(--s1)', values:[9,9,9,10,10,9,4,1,0,0]},
+      {name:'Turned down', color:'var(--s2)', values:[3,2,2,3,2,3,2,1,0,0]},
+      {name:'Missed', color:'var(--s3)', values:[0,0,1,0,0,0,5,2,1,1]},
+    ]
+  });
+  hBars(document.getElementById('m4chart'), {
+    title:'Share of requests missed after 4.2', sub:'rook-database pings, 12 Aug – 6 Sep',
+    groups:[['var(--s2)','The four who went quiet'],['var(--s1)','Everyone else (sample)']],
+    rows:[
+      {label:'Farlight',value:64,color:'var(--s2)',tip:'7 of 11 missed'},
+      {label:'The Undertow',value:64,color:'var(--s2)',tip:'9 of 14 missed'},
+      {label:'Meteor Mite',value:57,color:'var(--s2)',tip:'8 of 14 missed'},
+      {label:'Vesper',value:53,color:'var(--s2)',tip:'9 of 17 missed'},
+      {label:'Sgt. Bulwark',value:18,tip:'7 of 39 missed'},
+      {label:'Sgt. Falkirk',value:15,tip:'8 of 52 missed'},
+      {label:'Stormwrack',value:14,tip:'9 of 63 missed'},
+      {label:'The Gale',value:12,tip:'8 of 69 missed'},
+      {label:'Nightwell',value:11,tip:'8 of 70 missed'},
+      {label:'Captain Vantage',value:10,tip:'6 of 59 missed'},
+    ], max:70, fmt:v=>v+'%'
+  });
+  dumbbell(document.getElementById('m5chart'), {
+    title:'Local responder\'s share of their own area\'s requests', sub:'rook-database pings by callout area · before vs after 4.2',
+    rows:[{label:'Old Town',before:83,after:16},{label:'Harborside',before:81,after:20},{label:'Uptown',before:76,after:11}],
+    max:100, fmt:v=>v+'%'
+  });
+  ladder(document.getElementById('ladder'), [
+    {l:'Accepts', v:1, tip:'Counts toward them (×3 while below average)'},
+    {l:'Quick "no"', v:-0.5, tip:'Cheap: the callout moves on in seconds'},
+    {l:'Missed it', v:-1, tip:'Costlier: the callout waited the full 60 s'},
+    {l:'Accepted, then dropped out', v:-1.5, tip:'Costliest, unless the handler excuses it'},
+  ]);
+  outcomes(document.getElementById('outChart'));
+}
+drawAll();
+
+/* ---------- prototype embed ---------- */
+const embed = document.getElementById('embed'), frame = document.getElementById('proto');
+const PW = 1440, PH = 900;
+// Scale the 1440×900 prototype to fit the slide: no wider than the column, no taller than ~60% of the screen.
+function sizeEmbed(){
+  const colW = embed.parentElement.clientWidth; if (!colW) return;
+  const w = Math.min(colW, (innerHeight*0.6) * PW/PH), s = w / PW;
+  embed.style.width = w+'px'; embed.style.margin = '0 auto';
+  frame.style.width = PW+'px'; frame.style.height = PH+'px'; frame.style.transform = `scale(${s})`;
+  embed.style.height = (PH*s)+'px';
+}
+if ('ResizeObserver' in window) new ResizeObserver(sizeEmbed).observe(embed.parentElement);
+function loadStep(id){ frame.src = `05-super-speed/prototype/index.html?v=${id}#${id}`; document.querySelectorAll('#protoChips .chipbtn').forEach(b=>b.classList.toggle('on', b.dataset.step===id)); }
+document.querySelectorAll('#protoChips .chipbtn').forEach(b=>b.onclick=()=>loadStep(b.dataset.step));
+addEventListener('resize', sizeEmbed); sizeEmbed();
+let protoLoaded=false;
+
+/* ---------- slide chrome ---------- */
+const slides = [...document.querySelectorAll('.slide')];
+const dots = document.getElementById('dots');
+dots.innerHTML = slides.map((s,i)=>`<a href="#" data-i="${i}" title="${s.dataset.title}"></a>`).join('');
+dots.querySelectorAll('a').forEach(a=>a.onclick=e=>{ e.preventDefault(); go(+a.dataset.i); });
+let cur = -1;
+function go(i){ i=Math.max(0,Math.min(slides.length-1,i)); slides[i].scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}); }
+// The current slide is the last one whose top has passed 40% down the screen (works for slides taller than the screen).
+function updateCur(){
+  const line = innerHeight*0.4; let best = 0;
+  slides.forEach((s,i)=>{ if (s.getBoundingClientRect().top <= line) best = i; });
+  if (best === cur) return; cur = best;
+  document.getElementById('count').textContent = `${cur+1} / ${slides.length}`;
+  document.getElementById('progress').style.width = `${(cur+1)/slides.length*100}%`;
+  dots.querySelectorAll('a').forEach((a,k)=>a.classList.toggle('on',k===cur));
+}
+addEventListener('scroll', updateCur, {passive:true}); addEventListener('resize', updateCur); updateCur();
+// Reveal animations, and load the prototype only when its slide comes into view.
+const io = new IntersectionObserver(es=>es.forEach(e=>{
+  if (!e.isIntersecting) return;
+  e.target.classList.add('in');
+  if (e.target.contains(frame) && !protoLoaded){ protoLoaded=true; sizeEmbed(); loadStep('START'); }
+}), {threshold:0.12});
+slides.forEach(s=>io.observe(s));
+document.getElementById('prev').onclick=()=>go(cur-1);
+document.getElementById('next').onclick=()=>go(cur+1);
+addEventListener('keydown', e=>{
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (['ArrowRight','PageDown',' '].includes(e.key) || (e.key==='ArrowDown' && !e.shiftKey)){ e.preventDefault(); go(cur+1); }
+  if (['ArrowLeft','PageUp'].includes(e.key) || e.key==='ArrowUp'){ e.preventDefault(); go(cur-1); }
+  if (e.key==='Home') go(0); if (e.key==='End') go(slides.length-1);
+});
+/* theme */
+const themeBtn = document.getElementById('theme');
+try{ const t=localStorage.getItem('final-report-theme'); if(t) document.documentElement.dataset.theme=t; }catch(e){}
+themeBtn.onclick=()=>{
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  try{ localStorage.setItem('final-report-theme', document.documentElement.dataset.theme); }catch(e){}
+};
+</script>
+</body>
+</html>
